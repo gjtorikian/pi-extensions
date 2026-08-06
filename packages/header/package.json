@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-header",
   "version": "0.1.0",
-  "private": true,
   "description": "Animated header with custom frames for the pi TUI",
   "keywords": [
     "pi",
@@ -28,5 +27,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

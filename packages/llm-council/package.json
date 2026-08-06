@@ -1,8 +1,7 @@
 {
   "name": "@nicknisi/pi-llm-council",
   "version": "0.1.0",
-  "private": true,
-  "description": "LLM Council — multiple models answer independently, chairman synthesizes",
+  "description": "LLM Council \u2014 multiple models answer independently, chairman synthesizes",
   "keywords": [
     "pi",
     "pi-coding-agent",
@@ -32,5 +31,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

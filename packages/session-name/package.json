@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-session-name",
   "version": "0.1.0",
-  "private": true,
   "description": "Auto-name pi sessions (heuristic or LLM) plus search/resume-by-name conveniences",
   "keywords": [
     "pi",
@@ -27,5 +26,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

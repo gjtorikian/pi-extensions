@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-handoff",
   "version": "0.1.0",
-  "private": true,
   "description": "Compact the session into a handoff document for another agent",
   "keywords": [
     "pi",
@@ -26,5 +25,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

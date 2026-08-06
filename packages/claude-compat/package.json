@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-claude-compat",
   "version": "0.1.0",
-  "private": true,
   "description": "Claude Code compatibility for pi: CLAUDE_PLUGIN_ROOT shimming and !`command` dynamic skill placeholders",
   "keywords": [
     "pi",
@@ -25,5 +24,6 @@
       "./index.ts",
       "./dynamic-skills.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

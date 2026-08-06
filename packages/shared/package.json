@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-shared",
   "version": "0.1.0",
-  "private": true,
   "description": "Shared helpers for Nick's pi extensions (one-off LLM provider access, TUI utilities)",
   "keywords": [
     "pi",
@@ -22,5 +21,6 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
-  }
+  },
+  "license": "MIT"
 }

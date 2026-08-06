@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-orchestrate",
   "version": "0.1.0",
-  "private": true,
   "description": "Multi-agent orchestration across pi sessions",
   "keywords": [
     "pi",
@@ -22,5 +21,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

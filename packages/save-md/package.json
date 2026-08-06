@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-save-md",
   "version": "0.1.0",
-  "private": true,
   "description": "Save the last assistant message or session as markdown",
   "keywords": [
     "pi",
@@ -23,5 +22,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

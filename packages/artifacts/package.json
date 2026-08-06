@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-artifacts",
   "version": "1.0.0",
-  "private": true,
   "description": "artifact tool: render markdown/html to a styled browser page served from a lazy localhost server.",
   "keywords": [
     "pi",
@@ -37,5 +36,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

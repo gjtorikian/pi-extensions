@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-answer",
   "version": "0.1.0",
-  "private": true,
   "description": "One-off LLM answers to side questions without touching main agent context",
   "keywords": [
     "pi",
@@ -27,5 +26,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

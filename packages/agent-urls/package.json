@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-agent-urls",
   "version": "0.1.0",
-  "private": true,
   "description": "agent:// and history:// URL tools for reading pi-subagents runs, outputs, and transcripts",
   "keywords": [
     "pi",
@@ -22,5 +21,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

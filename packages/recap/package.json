@@ -1,7 +1,6 @@
 {
   "name": "@nicknisi/pi-recap",
   "version": "0.1.0",
-  "private": true,
   "description": "Auto-recap card injected into the transcript after idle minutes",
   "keywords": [
     "pi",
@@ -24,5 +23,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }
