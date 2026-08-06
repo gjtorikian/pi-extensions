@@ -1,8 +1,8 @@
 /** Config: storage paths, server constants, and user-tunable theme settings. */
 
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 /** Directory for artifact files, relative to project root (mirrors plan-mode's .pi/plans). */
 export const ARTIFACT_DIR = '.pi/artifacts';
@@ -33,7 +33,7 @@ const DEFAULTS: ArtifactsConfig = {
   maxWidth: 860,
 };
 
-const CONFIG_PATH = join(homedir(), '.pi', 'agent', 'configs', 'artifacts.json');
+const CONFIG_PATH = join(getAgentDir(), 'configs', 'artifacts.json');
 
 function loadConfig(): ArtifactsConfig {
   try {

@@ -66,8 +66,9 @@ Layout (boxed):
 ## Configuration
 
 Config is read once at extension load from
-`~/.pi/agent/configs/chat-input.json` — restart pi to apply changes. Missing
-file or invalid JSON falls back to all defaults silently. Copy
+`~/.pi/agent/configs/chat-input.json` — restart pi to apply changes. The path
+follows pi's agent dir, so it moves with `PI_CODING_AGENT_DIR` if you set it.
+Missing file or invalid JSON falls back to all defaults silently. Copy
 `chat-input.example.json` from this package as a starting point.
 
 ```json
