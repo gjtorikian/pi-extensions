@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check ."
   },
