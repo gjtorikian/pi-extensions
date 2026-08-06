@@ -22,5 +22,11 @@
       "./index.ts"
     ]
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/agent-urls"
+  },
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/agent-urls#readme"
 }

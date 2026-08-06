@@ -23,5 +23,11 @@
       "./index.ts"
     ]
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/turn-timer"
+  },
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/turn-timer#readme"
 }
