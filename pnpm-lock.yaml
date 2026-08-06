@@ -63,17 +63,17 @@ importers:
 
   packages/chat-input: {}
 
-  packages/claude-plugin-root: {}
+  packages/claude-compat: {}
 
-  packages/commit:
+  packages/cloak: {}
+
+  packages/handoff:
     dependencies:
       '@nicknisi/pi-shared':
         specifier: workspace:*
         version: link:../shared
 
-  packages/dynamic-skills: {}
-
-  packages/handoff:
+  packages/header:
     dependencies:
       '@nicknisi/pi-shared':
         specifier: workspace:*
@@ -85,27 +85,11 @@ importers:
         specifier: ^1.1.0
         version: 1.3.7
 
-  packages/magic-keywords: {}
-
-  packages/nicknisi-header:
-    dependencies:
-      '@nicknisi/pi-shared':
-        specifier: workspace:*
-        version: link:../shared
-
   packages/orchestrate: {}
-
-  packages/pi-cloak: {}
 
   packages/pin-last-prompt: {}
 
   packages/recap: {}
-
-  packages/review:
-    dependencies:
-      '@nicknisi/pi-shared':
-        specifier: workspace:*
-        version: link:../shared
 
   packages/save-md: {}
 
@@ -117,7 +101,7 @@ importers:
 
   packages/shared: {}
 
-  packages/spinner-verbs: {}
+  packages/spinner: {}
 
   packages/stash: {}
 

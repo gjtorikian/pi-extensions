@@ -1,15 +1,17 @@
 {
-  "name": "@nicknisi/pi-claude-plugin-root",
+  "name": "@nicknisi/pi-claude-compat",
   "version": "0.1.0",
   "private": true,
-  "description": "Expose Claude Code plugin root paths to pi skills and extensions",
+  "description": "Claude Code compatibility for pi: CLAUDE_PLUGIN_ROOT shimming and !`command` dynamic skill placeholders",
   "keywords": [
     "pi",
     "pi-coding-agent",
     "pi-package"
   ],
   "files": [
-    "index.ts"
+    "index.ts",
+    "dynamic-skills.ts",
+    "README.md"
   ],
   "type": "module",
   "exports": {
@@ -20,7 +22,8 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./index.ts",
+      "./dynamic-skills.ts"
     ]
   }
 }

@@ -1,4 +1,4 @@
-# @nicknisi/pi-spinner-verbs
+# @nicknisi/pi-spinner
 
 Replaces pi's default working/loading message with a randomly selected phrase on every turn. The list contains ~1000 entries drawn from The Office, Lord of the Rings, Arnold Schwarzenegger / Predator, LinkedIn-influencer satire, gym culture, security-ops jargon, and assorted programming memes. It exists purely to make the wait between turns more entertaining; it changes no agent behavior.
 

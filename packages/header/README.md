@@ -1,4 +1,4 @@
-# @nicknisi/pi-nicknisi-header
+# @nicknisi/pi-header
 
 Replaces pi's built-in TUI header with an animated nicknisi avatar sitting top-left (Claude Code / vim dashboard style), with session info beside it: pi version + model, cwd + git branch, and a random quote typed out character by character. Shown only on fresh sessions; the built-in header is restored the moment the first prompt is sent — like the vim dashboard disappearing when you get to work.
 

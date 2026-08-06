@@ -94,7 +94,7 @@ Consumers in this monorepo add the workspace dependency:
 }
 ```
 
-and import individual functions as shown above. Known consumers: `answer`, `btw`, `commit`, `handoff`, `nicknisi-header`, `review`, `session-name`, `statusline`.
+and import individual functions as shown above. Known consumers: `answer`, `btw`, `handoff`, `header`, `session-name`, `statusline`.
 
 ## Configuration
 

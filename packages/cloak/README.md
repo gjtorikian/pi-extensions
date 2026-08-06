@@ -1,4 +1,4 @@
-# @nicknisi/pi-pi-cloak
+# @nicknisi/pi-cloak
 
 Redacts secrets and other sensitive content from `read` tool results before they enter model context. Rules are defined per-file-glob in a JSON config; when the agent reads a matching file, matched text is replaced with a masked string (e.g. `S********`) so credentials, tokens, and private values never reach the model while the agent can still see file structure and read around the masked regions.
 
@@ -16,7 +16,7 @@ No tools, keybindings, widgets, or custom entry types.
 ## Install
 
 ```bash
-pi install /Users/nicknisi/Developer/pi-extensions/packages/pi-cloak
+pi install /Users/nicknisi/Developer/pi-extensions/packages/cloak
 ```
 
 ## Configuration
@@ -116,4 +116,4 @@ Typical workflow: add rules to `~/.pi/agent/cloak.json`, run `/cloak-status` in 
 - Glob matching is a hand-rolled `globToRegExp`, not a full glob library — no character classes (`[...]`) or brace expansion.
 - The masked output length can leak the original secret length when `cloakLength` is `null` (default). Set `cloakLength` to a fixed number to avoid this.
 - Config is not hot-reloaded on file change; reload requires a new session or `/cloak-status`.
-- Package name is `@nicknisi/pi-pi-cloak` (note the doubled `pi-`), private, single-file extension.
+- Package name is `@nicknisi/pi-cloak`, private, single-file extension. (Directory renamed `cloak`; package name kept.)

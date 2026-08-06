@@ -1,8 +1,8 @@
 {
-  "name": "@nicknisi/pi-dynamic-skills",
+  "name": "@nicknisi/pi-spinner",
   "version": "0.1.0",
   "private": true,
-  "description": "Claude Code-style !`command` placeholder execution inside pi SKILL.md files",
+  "description": "Custom rotating verbs for the working spinner",
   "keywords": [
     "pi",
     "pi-coding-agent",

@@ -1,5 +1,5 @@
 {
-  "name": "@nicknisi/pi-nicknisi-header",
+  "name": "@nicknisi/pi-header",
   "version": "0.1.0",
   "private": true,
   "description": "Animated header with custom frames for the pi TUI",
