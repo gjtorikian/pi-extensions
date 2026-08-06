@@ -1,0 +1,31 @@
+{
+  "name": "@nicknisi/pi-chat-input",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Configurable boxed input editor for pi, with paste-again-to-expand",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts",
+    "config.ts",
+    "utils.ts",
+    "README.md",
+    "chat-input.example.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

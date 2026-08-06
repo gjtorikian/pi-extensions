@@ -1,0 +1,26 @@
+{
+  "name": "@nicknisi/pi-agent-urls",
+  "version": "0.1.0",
+  "private": true,
+  "description": "agent:// and history:// URL tools for reading pi-subagents runs, outputs, and transcripts",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

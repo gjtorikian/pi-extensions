@@ -1,0 +1,31 @@
+{
+  "name": "@nicknisi/pi-btw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "/btw — side-channel LLM chat in a floating window, never touching main agent context",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@nicknisi/pi-shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

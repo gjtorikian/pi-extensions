@@ -1,0 +1,28 @@
+{
+  "name": "@nicknisi/pi-recap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auto-recap card injected into the transcript after idle minutes",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
