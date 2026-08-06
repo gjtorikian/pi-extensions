@@ -62,8 +62,8 @@ Hardcoded preference list (`EXTRACTION_MODEL_PREFERENCES` in `index.ts`):
 
 ```ts
 [
-  { provider: "anthropic", modelId: "claude-fable-5" },
-  { provider: "anthropic", modelId: "claude-opus-5" },
+  { provider: 'anthropic', modelId: 'claude-fable-5' },
+  { provider: 'anthropic', modelId: 'claude-opus-5' },
 ];
 ```
 

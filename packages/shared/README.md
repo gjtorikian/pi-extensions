@@ -11,7 +11,7 @@ It exists to centralize two things that several extensions were duplicating: one
 ### LLM (`llm.ts`)
 
 ```ts
-import { getModelProvider } from "@nicknisi/pi-shared";
+import { getModelProvider } from '@nicknisi/pi-shared';
 ```
 
 `getModelProvider(ctx, model)` resolves the composed runtime provider for a model via `ctx.modelRegistry.getProvider(model.provider)`. Unlike compat's global API dispatch, this honors `models.json` overrides and extension-registered providers. Throws `No provider registered for <provider>` if unregistered.
@@ -40,7 +40,7 @@ import {
   hideLabeledSection,
   sanitizeTerminalLabel,
   // ...
-} from "@nicknisi/pi-shared";
+} from '@nicknisi/pi-shared';
 ```
 
 Six self-contained patterns, adapted from a pi dashboard extension:
@@ -64,7 +64,7 @@ Shared structural types: `RenderableNode` (`children?`, `invalidate()`, `render(
 ### Searchable select (`searchable-select-list.ts`)
 
 ```ts
-import { SearchableSelectList } from "@nicknisi/pi-shared";
+import { SearchableSelectList } from '@nicknisi/pi-shared';
 ```
 
 A pi-tui `Component` composing an `Input` above a `SelectList`. pi-tui removed `SelectList.searchable`; this is the manual filtering pattern pi's own model/theme selectors use. `handleInput` routes the `tui.select.up` / `tui.select.down` / `tui.select.confirm` / `tui.select.cancel` keybindings to the list and everything else to the input, whose value drives `selectList.setFilter()`.
