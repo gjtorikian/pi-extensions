@@ -1,12 +1,19 @@
 {
   "name": "@nicknisi/pi-llm-council",
   "version": "0.1.0",
-  "description": "LLM Council \u2014 multiple models answer independently, chairman synthesizes",
+  "description": "LLM Council — multiple models answer independently, chairman synthesizes",
   "keywords": [
     "pi",
     "pi-coding-agent",
     "pi-package"
   ],
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/llm-council#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/llm-council"
+  },
   "files": [
     "index.ts",
     "config.ts",
@@ -31,12 +38,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicknisi/pi-extensions.git",
-    "directory": "packages/llm-council"
-  },
-  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/llm-council#readme"
+  }
 }

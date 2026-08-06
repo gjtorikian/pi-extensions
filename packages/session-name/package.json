@@ -7,6 +7,13 @@
     "pi-coding-agent",
     "pi-package"
   ],
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/session-name#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/session-name"
+  },
   "files": [
     "index.ts",
     "session-name.example.json"
@@ -26,12 +33,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicknisi/pi-extensions.git",
-    "directory": "packages/session-name"
-  },
-  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/session-name#readme"
+  }
 }

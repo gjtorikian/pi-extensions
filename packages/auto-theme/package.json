@@ -7,6 +7,13 @@
     "pi-coding-agent",
     "pi-package"
   ],
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/auto-theme#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/auto-theme"
+  },
   "files": [
     "index.ts"
   ],
@@ -21,12 +28,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicknisi/pi-extensions.git",
-    "directory": "packages/auto-theme"
-  },
-  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/auto-theme#readme"
+  }
 }

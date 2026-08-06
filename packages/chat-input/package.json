@@ -7,6 +7,13 @@
     "pi-coding-agent",
     "pi-package"
   ],
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/chat-input#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/chat-input"
+  },
   "files": [
     "index.ts",
     "config.ts",
@@ -26,12 +33,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicknisi/pi-extensions.git",
-    "directory": "packages/chat-input"
-  },
-  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/chat-input#readme"
+  }
 }

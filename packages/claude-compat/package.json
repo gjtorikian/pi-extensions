@@ -7,6 +7,13 @@
     "pi-coding-agent",
     "pi-package"
   ],
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/claude-compat#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/claude-compat"
+  },
   "files": [
     "index.ts",
     "dynamic-skills.ts",
@@ -24,12 +31,5 @@
       "./index.ts",
       "./dynamic-skills.ts"
     ]
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicknisi/pi-extensions.git",
-    "directory": "packages/claude-compat"
-  },
-  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/claude-compat#readme"
+  }
 }

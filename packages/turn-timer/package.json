@@ -7,6 +7,13 @@
     "pi-coding-agent",
     "pi-package"
   ],
+  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/turn-timer#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/pi-extensions.git",
+    "directory": "packages/turn-timer"
+  },
   "files": [
     "index.ts"
   ],
@@ -22,12 +29,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicknisi/pi-extensions.git",
-    "directory": "packages/turn-timer"
-  },
-  "homepage": "https://github.com/nicknisi/pi-extensions/tree/main/packages/turn-timer#readme"
+  }
 }
