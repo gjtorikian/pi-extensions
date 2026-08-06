@@ -1,6 +1,6 @@
 import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
 
-const ANSI_RE = /\x1b\[[0-9;]*m|\x1b\[0?m/g;
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
 /** Strip ANSI escapes so we can inspect a rendered line's visible characters. */
 export function plainText(line: string): string {

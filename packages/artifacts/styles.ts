@@ -1,14 +1,28 @@
 /** Bespoke document stylesheet: design tokens, light/dark schemes, prose, chrome, diff + code theming. */
 
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 import { CONFIG } from './config.js';
 
-const require = createRequire(import.meta.url);
-
-/** diff2html base stylesheet, read from the installed package (stays in sync with its JS). */
-const D2H_BASE_CSS = readFileSync(require.resolve('diff2html/bundles/css/diff2html.min.css'), 'utf-8');
+/**
+ * diff2html base stylesheet, read from the installed package (stays in sync
+ * with its JS).
+ *
+ * Resolved with a *direct* `import.meta.resolve(...)` call rather than
+ * `createRequire`: pi loads extensions through jiti, which rewrites only
+ * call expressions, and hosts that bundle the extension into a single file
+ * have no on-disk node_modules for `createRequire` to walk. There the call
+ * throws, so the catch degrades to unstyled diffs rather than failing
+ * extension load.
+ */
+const D2H_BASE_CSS = (() => {
+  try {
+    return readFileSync(fileURLToPath(import.meta.resolve('diff2html/bundles/css/diff2html.min.css')), 'utf-8');
+  } catch {
+    return '';
+  }
+})();
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 // One scheme = one flat token set. The accent is user-configurable; everything

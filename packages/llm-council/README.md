@@ -77,7 +77,7 @@ Or steer it directly: "use llm_council to compare these two designs". The tool r
 
 Two layers:
 
-1. **Global:** `~/.pi/agent/configs/llm-council.json` — copy [`llm-council.example.json`](llm-council.example.json). Loaded once at module load; this is the only source for `shared` (display) settings.
+1. **Global:** `~/.pi/agent/configs/llm-council.json` — copy [`llm-council.example.json`](llm-council.example.json). Loaded once at module load; this is the only source for `shared` (display) settings. The path follows pi's agent dir, so it moves with `PI_CODING_AGENT_DIR` if you set it.
 2. **Project-local:** `<cwd>/.pi/configs/llm-council.json` — copy [`llm-council.project.example.json`](llm-council.project.example.json). Deep-merged over the global file per tool call, so only differing keys are needed — typically `member.council` and `chairman.model` to give a work project a different lineup. Display (`shared`) settings do **not** apply from the project file.
 
 No environment variables are read for configuration. (`PI_SUBAGENT_DEPTH` is set internally to block recursion.)

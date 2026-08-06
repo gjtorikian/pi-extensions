@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { CouncilMemberUserConfig, LlmCouncilUserConfig } from './types.js';
 
 // ── Defaults ───────────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ export const DEFAULT_CONFIG = {
 //           only the keys that differ need to be present — e.g. just
 //           member.council and chairman.model for a per-project lineup)
 
-const GLOBAL_CONFIG_PATH = join(homedir(), '.pi', 'agent', 'configs', 'llm-council.json');
+const GLOBAL_CONFIG_PATH = join(getAgentDir(), 'configs', 'llm-council.json');
 
 function projectConfigPath(cwd: string): string {
   return join(cwd, '.pi', 'configs', 'llm-council.json');

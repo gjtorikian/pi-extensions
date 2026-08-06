@@ -16,7 +16,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ExtensionAPI, Theme } from '@earendil-works/pi-coding-agent';
-import { getMarkdownTheme } from '@earendil-works/pi-coding-agent';
+import { getAgentDir, getMarkdownTheme } from '@earendil-works/pi-coding-agent';
 import { Markdown, Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 import { CONFIG, loadCouncil, type ResolvedCouncil } from './config.js';
@@ -55,6 +55,61 @@ function toolHeader(label: string, summary: string, theme: Theme, dot?: string, 
   return `${d}${title} ${summary}`;
 }
 
+/** Status icon: ✓ / ✗ / spinner frame / waiting glyph. */
+function statusIcon(status: MemberResult['status'], theme: Theme, spinnerFrame: number): string {
+  switch (status) {
+    case 'done':
+      return applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.successPrefix.prefix);
+    case 'error':
+      return applyColor(theme, CONFIG.shared.status.errorColor, CONFIG.shared.errorPrefix.prefix);
+    case 'working':
+      return applyColor(theme, CONFIG.shared.spinner.color, SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]);
+    default:
+      return applyColor(theme, CONFIG.shared.status.waitingIconColor, CONFIG.shared.status.waitingIcon);
+  }
+}
+
+/** `<icon> <label> <model>` member row. */
+function memberHeader(icon: string, m: Pick<MemberResult, 'label' | 'model' | 'displayName'>, theme: Theme): string {
+  return indentLine(
+    `${icon} ${applyColor(theme, CONFIG.member.display.labelColor, m.label)} ${applyColor(theme, CONFIG.member.display.modelColor, m.displayName ?? m.model)}`,
+  );
+}
+
+/** `<icon> [badge] Chairman <model>` row. */
+function chairmanHeader(icon: string, c: { model: string; displayName?: string }, theme: Theme): string {
+  const badge = CONFIG.chairman.display.icon ? `${CONFIG.chairman.display.icon} ` : '';
+  return indentLine(
+    `${icon} ${badge}${applyColor(theme, CONFIG.chairman.display.labelColor, 'Chairman')} ${applyColor(theme, CONFIG.chairman.display.modelColor, c.displayName ?? c.model)}`,
+  );
+}
+
+/** "done + elapsed" sub-line. */
+function doneLine(theme: Theme, m: { startedAt?: number; doneAt?: number }): string {
+  return `${applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`;
+}
+
+/** "error message (or label) + elapsed" sub-line. */
+function errorLine(theme: Theme, m: { error?: string; startedAt?: number; doneAt?: number }): string {
+  return `${applyColor(theme, CONFIG.shared.status.errorColor, m.error?.slice(0, 60) || CONFIG.shared.status.errorLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`;
+}
+
+function workingLine(theme: Theme): string {
+  return applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.workingLabel);
+}
+
+/** Sub-line while members may still be running: done/error show elapsed, else "working". */
+function memberLiveSubLine(m: MemberResult, theme: Theme): string {
+  if (m.status === 'done') return doneLine(theme, m);
+  if (m.status === 'error') return errorLine(theme, m);
+  return workingLine(theme);
+}
+
+/** Sub-line once members have settled (done or error only). */
+function memberFinalSubLine(m: MemberResult, theme: Theme): string {
+  return m.status === 'done' ? doneLine(theme, m) : errorLine(theme, m);
+}
+
 function makeText(lastComponent: any, text: string): Text {
   const comp = lastComponent instanceof Text ? lastComponent : new Text('', 0, 0);
   comp.setText(text);
@@ -73,36 +128,12 @@ function renderMemberTree(
 ): string[] {
   const lines: string[] = [];
   for (const m of details.members) {
-    const icon =
-      m.status === 'done'
-        ? applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.successPrefix.prefix)
-        : m.status === 'error'
-          ? applyColor(theme, CONFIG.shared.status.errorColor, CONFIG.shared.errorPrefix.prefix)
-          : m.status === 'working'
-            ? applyColor(theme, CONFIG.shared.spinner.color, SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length])
-            : applyColor(theme, CONFIG.shared.status.waitingIconColor, CONFIG.shared.status.waitingIcon);
-    lines.push(
-      indentLine(
-        `${icon} ${applyColor(theme, CONFIG.member.display.labelColor, m.label)} ${applyColor(theme, CONFIG.member.display.modelColor, m.displayName ?? m.model)}`,
-      ),
-    );
+    lines.push(memberHeader(statusIcon(m.status, theme, spinnerFrame), m, theme));
     lines.push(indentLine(branchLine(opts.memberSubLine(m), theme)));
     lines.push('');
   }
   if (details.chairman) {
-    const cIcon =
-      details.chairman.status === 'done'
-        ? applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.successPrefix.prefix)
-        : details.chairman.status === 'error'
-          ? applyColor(theme, CONFIG.shared.status.errorColor, CONFIG.shared.errorPrefix.prefix)
-          : details.chairman.status === 'working'
-            ? applyColor(theme, CONFIG.shared.spinner.color, SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length])
-            : applyColor(theme, CONFIG.shared.status.waitingIconColor, CONFIG.shared.status.waitingIcon);
-    lines.push(
-      indentLine(
-        `${cIcon} ${CONFIG.chairman.display.icon ? CONFIG.chairman.display.icon + ' ' : ''}${applyColor(theme, CONFIG.chairman.display.labelColor, 'Chairman')} ${applyColor(theme, CONFIG.chairman.display.modelColor, details.chairman.displayName ?? details.chairman.model)}`,
-      ),
-    );
+    lines.push(chairmanHeader(statusIcon(details.chairman.status, theme, spinnerFrame), details.chairman, theme));
     const suffix = opts.chairmanSubLineSuffix ?? '';
     lines.push(indentLine(branchLine(opts.chairmanSubLine + suffix, theme)));
   }
@@ -152,12 +183,9 @@ function createExpandedView(details: CouncilDetails, theme: Theme, markdownTheme
           m.status === 'error'
             ? applyColor(theme, CONFIG.shared.status.errorColor, CONFIG.shared.errorPrefix.prefix)
             : applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.successPrefix.prefix);
-        lines.push(
-          indentLine(
-            `${icon} ${applyColor(theme, CONFIG.member.display.labelColor, m.label)} ${applyColor(theme, CONFIG.member.display.modelColor, m.displayName ?? m.model)}`,
-          ),
-        );
+        lines.push(memberHeader(icon, m, theme));
         if (m.status === 'error') {
+          // Error label + elapsed only; the full error message gets its own line below.
           lines.push(
             indentLine(
               branchLine(
@@ -168,14 +196,7 @@ function createExpandedView(details: CouncilDetails, theme: Theme, markdownTheme
           );
           if (m.error) lines.push(indentLine(indentLine(applyColor(theme, CONFIG.shared.status.errorColor, m.error))));
         } else {
-          lines.push(
-            indentLine(
-              branchLine(
-                `${applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`,
-                theme,
-              ),
-            ),
-          );
+          lines.push(indentLine(branchLine(doneLine(theme, m), theme)));
           if (md) for (const l of md.render(cw)) lines.push(indentLine(indentLine(l)));
         }
         lines.push('');
@@ -190,11 +211,7 @@ function createExpandedView(details: CouncilDetails, theme: Theme, markdownTheme
           details.chairman.status === 'done'
             ? applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)
             : applyColor(theme, CONFIG.shared.status.errorColor, CONFIG.shared.status.errorLabel);
-        lines.push(
-          indentLine(
-            `${cIcon} ${CONFIG.chairman.display.icon ? CONFIG.chairman.display.icon + ' ' : ''}${applyColor(theme, CONFIG.chairman.display.labelColor, 'Chairman')} ${applyColor(theme, CONFIG.chairman.display.modelColor, details.chairman.displayName ?? details.chairman.model)}`,
-          ),
-        );
+        lines.push(chairmanHeader(cIcon, details.chairman, theme));
         lines.push(indentLine(branchLine(cStatus, theme)));
         if (details.chairman.status === 'error' && details.chairman.error) {
           lines.push(
@@ -286,7 +303,7 @@ function buildExecArgs(exec: ExecConfig): string[] {
   } else {
     args.push('--no-extensions');
     for (const name of exec.extensions) {
-      args.push('-e', path.join(os.homedir(), '.pi', 'agent', 'extensions', name, 'src', 'index.ts'));
+      args.push('-e', path.join(getAgentDir(), 'extensions', name, 'src', 'index.ts'));
     }
   }
 
@@ -298,7 +315,7 @@ function buildExecArgs(exec: ExecConfig): string[] {
   } else {
     args.push('--no-skills');
     for (const name of exec.skills) {
-      args.push('--skill', path.join(os.homedir(), '.pi', 'agent', 'skills', name, 'SKILL.md'));
+      args.push('--skill', path.join(getAgentDir(), 'skills', name, 'SKILL.md'));
     }
   }
 
@@ -645,14 +662,7 @@ export default function (pi: ExtensionAPI) {
       const details = liveDetails;
       lines.push(
         ...renderMemberTree(details, theme, frame, {
-          memberSubLine: (m) =>
-            m.status === 'done'
-              ? `${applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`
-              : m.status === 'working'
-                ? applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.workingLabel)
-                : m.status === 'error'
-                  ? `${applyColor(theme, CONFIG.shared.status.errorColor, m.error?.slice(0, 60) || CONFIG.shared.status.errorLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`
-                  : applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.workingLabel),
+          memberSubLine: (m) => memberLiveSubLine(m, theme),
           chairmanSubLine:
             details.stage === 'chairman' && details.chairman?.status === 'working'
               ? applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.synthesizingLabel)
@@ -694,14 +704,7 @@ export default function (pi: ExtensionAPI) {
       // ── Progress: members deliberating ─────────────────────────────────
       if (details.stage === 'members') {
         const lines = renderMemberTree(details, theme, frame, {
-          memberSubLine: (m) =>
-            m.status === 'done'
-              ? `${applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`
-              : m.status === 'working'
-                ? applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.workingLabel)
-                : m.status === 'error'
-                  ? `${applyColor(theme, CONFIG.shared.status.errorColor, m.error?.slice(0, 60) || CONFIG.shared.status.errorLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`
-                  : applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.workingLabel),
+          memberSubLine: (m) => memberLiveSubLine(m, theme),
           chairmanSubLine: applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.waitingLabel),
         });
         return makeText(ctx?.lastComponent, lines.join('\n'));
@@ -709,25 +712,29 @@ export default function (pi: ExtensionAPI) {
 
       // ── Progress: chairman synthesizing ────────────────────────────────
       if (details.stage === 'chairman') {
+        const c = details.chairman;
+        let chairmanSubLine: string;
+        if (c?.status === 'working')
+          chairmanSubLine = applyColor(
+            theme,
+            CONFIG.shared.status.workingColor,
+            CONFIG.shared.status.synthesizingLabel,
+          );
+        else if (c?.status === 'error')
+          chairmanSubLine = applyColor(
+            theme,
+            CONFIG.shared.status.errorColor,
+            c.error?.slice(0, 60) || CONFIG.shared.status.errorLabel,
+          );
+        else if (c?.status === 'done')
+          chairmanSubLine = applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel);
+        else chairmanSubLine = applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.waitingLabel);
+
         const lines = [
           '',
           ...renderMemberTree(details, theme, frame, {
-            memberSubLine: (m) =>
-              m.status === 'done'
-                ? `${applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`
-                : `${applyColor(theme, CONFIG.shared.status.errorColor, m.error?.slice(0, 60) || CONFIG.shared.status.errorLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`,
-            chairmanSubLine:
-              details.chairman?.status === 'working'
-                ? applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.synthesizingLabel)
-                : details.chairman?.status === 'error'
-                  ? applyColor(
-                      theme,
-                      CONFIG.shared.status.errorColor,
-                      details.chairman.error?.slice(0, 60) || CONFIG.shared.status.errorLabel,
-                    )
-                  : details.chairman?.status === 'done'
-                    ? applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)
-                    : applyColor(theme, CONFIG.shared.status.workingColor, CONFIG.shared.status.waitingLabel),
+            memberSubLine: (m) => memberFinalSubLine(m, theme),
+            chairmanSubLine,
           }),
         ];
         return makeText(ctx?.lastComponent, lines.join('\n'));
@@ -738,10 +745,7 @@ export default function (pi: ExtensionAPI) {
         const lines = [
           '',
           ...renderMemberTree(details, theme, 0, {
-            memberSubLine: (m) =>
-              m.status === 'done'
-                ? `${applyColor(theme, CONFIG.shared.status.doneColor, CONFIG.shared.status.doneLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`
-                : `${applyColor(theme, CONFIG.shared.status.errorColor, m.error?.slice(0, 60) || CONFIG.shared.status.errorLabel)} ${applyColor(theme, CONFIG.shared.status.elapsedColor, formatElapsed(m.startedAt, m.doneAt))}`,
+            memberSubLine: (m) => memberFinalSubLine(m, theme),
             chairmanSubLine:
               details.chairman?.status === 'error'
                 ? applyColor(

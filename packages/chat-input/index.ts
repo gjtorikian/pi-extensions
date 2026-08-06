@@ -22,9 +22,9 @@
  *   ╰──────────────────────────╯
  *   <autocomplete menu>
  *
- * The prefix (default ❯) is shown only on the first body line; subsequent
- * lines get a space so content aligns. Autocomplete lines render below the
- * box, indented by `extraMenuIndent`.
+ * The prefix (default ❯, any cell width) is shown only on the first body line;
+ * subsequent lines are indented by the prefix's width so content aligns.
+ * Autocomplete lines render below the box, indented by `extraMenuIndent`.
  */
 
 // ─── Paste-again-to-expand ────────────────────────────────────────────────
@@ -97,6 +97,42 @@ function getScrollText(line: string): string | null {
 
 function isBorderLike(line: string): boolean {
   return isSolidBorder(line) || getScrollText(line) !== null;
+}
+
+/** Prefix width in terminal cells — layout math supports multi-cell prefixes. */
+const PREFIX_W = Math.max(1, visibleWidth(CONFIG.PREFIX));
+
+/** Locate pi's stock top/bottom borders and their scroll indicators in a render. */
+function scanBorders(stock: string[]): {
+  firstIdx: number;
+  lastIdx: number;
+  topScroll: string | null;
+  bottomScroll: string | null;
+} {
+  const firstIdx = stock.findIndex(isBorderLike);
+  let lastIdx = -1;
+  for (let i = stock.length - 1; i >= 0; i--) {
+    if (isBorderLike(stock[i]!)) {
+      lastIdx = i;
+      break;
+    }
+  }
+  const topScroll = firstIdx !== -1 ? getScrollText(stock[firstIdx]!) : null;
+  const bottomScroll = lastIdx !== -1 && lastIdx !== firstIdx ? getScrollText(stock[lastIdx]!) : null;
+  return { firstIdx, lastIdx, topScroll, bottomScroll };
+}
+
+/** Autocomplete-menu lines (after the last stock border), indented and padded to width. */
+function menuLines(stock: string[], lastIdx: number, width: number): string[] {
+  if (lastIdx === -1) return [];
+  const indent = ' '.repeat(CONFIG.EXTRA_MENU_INDENT);
+  const menu: string[] = [];
+  for (let i = lastIdx + 1; i < stock.length; i++) {
+    const vw = visibleWidth(stock[i]!);
+    const fill = vw + CONFIG.EXTRA_MENU_INDENT < width ? ' '.repeat(width - vw - CONFIG.EXTRA_MENU_INDENT) : '';
+    menu.push(indent + stock[i]! + fill);
+  }
+  return menu;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────
@@ -193,9 +229,11 @@ class ChatInput extends CustomEditor {
 
   render(width: number): string[] {
     const padMultiplier = CONFIG.BOXED_VIEW ? 3 : 1;
-    if (width < 5 + CONFIG.BOX_PAD_X * padMultiplier) return super.render(width);
+    if (width < 4 + PREFIX_W + CONFIG.BOX_PAD_X * padMultiplier) return super.render(width);
 
-    const contentWidth = CONFIG.BOXED_VIEW ? width - 3 - CONFIG.BOX_PAD_X * 3 : width - 2 * CONFIG.BOX_PAD_X - 1;
+    const contentWidth = CONFIG.BOXED_VIEW
+      ? width - 2 - CONFIG.BOX_PAD_X * 3 - PREFIX_W
+      : width - 2 * CONFIG.BOX_PAD_X - PREFIX_W;
     const stock = super.render(contentWidth);
     if (stock.length < 2) return super.render(width);
 
@@ -204,116 +242,65 @@ class ChatInput extends CustomEditor {
       : this.renderUnboxed(stock, contentWidth, width);
   }
 
+  /** A horizontal rule of `width` cells, with the scroll indicator inlaid when present. */
+  private rule(scroll: string | null, width: number): string {
+    if (!scroll) return this.border('─'.repeat(width));
+    const label = `── ${scroll} `;
+    return this.border(label) + this.border('─'.repeat(Math.max(0, width - visibleWidth(label))));
+  }
+
+  /** Body lines (between the stock borders): pad + prefix + content, then `wrap`. */
+  private bodyLines(
+    stock: string[],
+    firstIdx: number,
+    lastIdx: number,
+    contentWidth: number,
+    wrap: (inner: string) => string,
+  ): string[] {
+    const pad = ' '.repeat(CONFIG.BOX_PAD_X);
+    const body: string[] = [];
+    let isFirst = true;
+    for (let i = 0; i < stock.length; i++) {
+      if (i === firstIdx || i === lastIdx) continue;
+      if (lastIdx !== -1 && i > lastIdx) continue;
+      const vw = visibleWidth(stock[i]!);
+      const fill = vw < contentWidth ? ' '.repeat(contentWidth - vw) : '';
+      const prefixStr = isFirst ? this.accent(CONFIG.PREFIX) : ' '.repeat(PREFIX_W);
+      body.push(wrap(pad + prefixStr + pad + stock[i]! + fill));
+      isFirst = false;
+    }
+    return body;
+  }
+
   private renderBoxed(stock: string[], contentWidth: number, width: number): string[] {
     const c = this.corners;
     const innerWidth = width - 2;
-
-    const firstIdx = stock.findIndex(isBorderLike);
-    let lastIdx = -1;
-    for (let i = stock.length - 1; i >= 0; i--) {
-      if (isBorderLike(stock[i]!)) {
-        lastIdx = i;
-        break;
-      }
-    }
-
-    const buildTop = (scroll: string | null): string =>
-      scroll
-        ? this.border(c.tl) +
-          this.border(`── ${scroll} `) +
-          this.border('─'.repeat(Math.max(0, innerWidth - visibleWidth(`── ${scroll} `)))) +
-          this.border(c.tr)
-        : this.border(c.tl) + this.border('─'.repeat(innerWidth)) + this.border(c.tr);
-    const buildBottom = (scroll: string | null): string =>
-      scroll
-        ? this.border(c.bl) +
-          this.border(`── ${scroll} `) +
-          this.border('─'.repeat(Math.max(0, innerWidth - visibleWidth(`── ${scroll} `)))) +
-          this.border(c.br)
-        : this.border(c.bl) + this.border('─'.repeat(innerWidth)) + this.border(c.br);
-
-    const topScroll = firstIdx !== -1 ? getScrollText(stock[firstIdx]!) : null;
-    const bottomScroll = lastIdx !== -1 && lastIdx !== firstIdx ? getScrollText(stock[lastIdx]!) : null;
-    const top = buildTop(topScroll);
-    const bottom = buildBottom(bottomScroll);
-
+    const { firstIdx, lastIdx, topScroll, bottomScroll } = scanBorders(stock);
     const pad = ' '.repeat(CONFIG.BOX_PAD_X);
 
-    // Body lines (between first and last border).
-    const body: string[] = [];
-    let isFirst = true;
-    for (let i = 0; i < stock.length; i++) {
-      if (i === firstIdx || i === lastIdx) continue;
-      if (lastIdx !== -1 && i > lastIdx) continue;
-      const vw = visibleWidth(stock[i]!);
-      const fill = vw < contentWidth ? ' '.repeat(contentWidth - vw) : '';
-      const prefixStr = isFirst ? this.accent(CONFIG.PREFIX) : ' ';
-      body.push(this.border(c.side) + pad + prefixStr + pad + stock[i]! + fill + pad + this.border(c.side));
-      isFirst = false;
-    }
-
-    // Menu lines (after last border).
-    const menu: string[] = [];
-    if (lastIdx !== -1) {
-      for (let i = lastIdx + 1; i < stock.length; i++) {
-        const vw = visibleWidth(stock[i]!);
-        const indent = ' '.repeat(CONFIG.EXTRA_MENU_INDENT);
-        const fill = vw + CONFIG.EXTRA_MENU_INDENT < width ? ' '.repeat(width - vw - CONFIG.EXTRA_MENU_INDENT) : '';
-        menu.push(indent + stock[i]! + fill);
-      }
-    }
+    const top = this.border(c.tl) + this.rule(topScroll, innerWidth) + this.border(c.tr);
+    const bottom = this.border(c.bl) + this.rule(bottomScroll, innerWidth) + this.border(c.br);
+    const body = this.bodyLines(
+      stock,
+      firstIdx,
+      lastIdx,
+      contentWidth,
+      (inner) => this.border(c.side) + inner + pad + this.border(c.side),
+    );
 
     const gap = Array.from({ length: CONFIG.MENU_GAP }, () => '');
-    return [top, ...body, bottom, ...gap, ...menu];
+    return [top, ...body, bottom, ...gap, ...menuLines(stock, lastIdx, width)];
   }
 
   private renderUnboxed(stock: string[], contentWidth: number, width: number): string[] {
-    const firstIdx = stock.findIndex(isBorderLike);
-    let lastIdx = -1;
-    for (let i = stock.length - 1; i >= 0; i--) {
-      if (isBorderLike(stock[i]!)) {
-        lastIdx = i;
-        break;
-      }
-    }
+    const { firstIdx, lastIdx, topScroll, bottomScroll } = scanBorders(stock);
 
-    const buildTop = (scroll: string | null): string =>
-      scroll
-        ? this.border(`── ${scroll} `) + this.border('─'.repeat(Math.max(0, width - visibleWidth(`── ${scroll} `))))
-        : this.border('─'.repeat(width));
-    const buildBottom = buildTop; // identical for unboxed
-
-    const topScroll = firstIdx !== -1 ? getScrollText(stock[firstIdx]!) : null;
-    const bottomScroll = lastIdx !== -1 && lastIdx !== firstIdx ? getScrollText(stock[lastIdx]!) : null;
-    const top = buildTop(topScroll);
-    const bottom = buildBottom(bottomScroll);
-
-    const pad = ' '.repeat(CONFIG.BOX_PAD_X);
-
-    const body: string[] = [];
-    let isFirst = true;
-    for (let i = 0; i < stock.length; i++) {
-      if (i === firstIdx || i === lastIdx) continue;
-      if (lastIdx !== -1 && i > lastIdx) continue;
-      const vw = visibleWidth(stock[i]!);
-      const fill = vw < contentWidth ? ' '.repeat(contentWidth - vw) : '';
-      const prefixStr = isFirst ? this.accent(CONFIG.PREFIX) : ' ';
-      body.push(pad + prefixStr + pad + stock[i]! + fill);
-      isFirst = false;
-    }
-
-    const menu: string[] = [];
-    if (lastIdx !== -1) {
-      for (let i = lastIdx + 1; i < stock.length; i++) {
-        const vw = visibleWidth(stock[i]!);
-        const indent = ' '.repeat(CONFIG.EXTRA_MENU_INDENT);
-        const fill = vw + CONFIG.EXTRA_MENU_INDENT < width ? ' '.repeat(width - vw - CONFIG.EXTRA_MENU_INDENT) : '';
-        menu.push(indent + stock[i]! + fill);
-      }
-    }
+    const top = this.rule(topScroll, width);
+    const bottom = this.rule(bottomScroll, width);
+    const body = this.bodyLines(stock, firstIdx, lastIdx, contentWidth, (inner) => inner);
 
     const gap = Array.from({ length: CONFIG.MENU_GAP }, () => '');
-    return [top, ...body, bottom, ...gap, ...menu];
+    return [top, ...body, bottom, ...gap, ...menuLines(stock, lastIdx, width)];
   }
 }
 

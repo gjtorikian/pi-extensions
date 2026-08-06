@@ -101,6 +101,9 @@ One optional config file, read once at extension load (restart pi to apply chang
 ~/.pi/agent/configs/artifacts.json
 ```
 
+The path follows pi's agent dir, so it moves with `PI_CODING_AGENT_DIR` if you
+set it.
+
 Copy [`artifacts.example.json`](artifacts.example.json) there. All keys optional; invalid values fall back to defaults.
 
 | Key           | Type                        | Default   | Meaning                                                                         |
