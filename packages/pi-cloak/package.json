@@ -1,5 +1,5 @@
 {
-  "name": "@nicknisi/pi-pi-cloak",
+  "name": "@nicknisi/pi-cloak",
   "version": "0.1.0",
   "private": true,
   "description": "Redact secrets and sensitive paths from model context",
