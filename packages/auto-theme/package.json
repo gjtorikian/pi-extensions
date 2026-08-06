@@ -1,0 +1,26 @@
+{
+  "name": "@nicknisi/pi-auto-theme",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sync pi theme with macOS system appearance",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

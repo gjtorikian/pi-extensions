@@ -1,0 +1,26 @@
+{
+  "name": "@nicknisi/pi-spinner-verbs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Custom rotating verbs for the working spinner",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

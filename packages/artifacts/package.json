@@ -1,0 +1,41 @@
+{
+  "name": "@nicknisi/pi-artifacts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "artifact tool: render markdown/html to a styled browser page served from a lazy localhost server.",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts",
+    "config.ts",
+    "server.ts",
+    "styles.ts",
+    "templates.ts",
+    "utils.ts",
+    "README.md",
+    "artifacts.example.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "diff2html": "^3.4.52",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.5",
+    "typebox": "^1.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

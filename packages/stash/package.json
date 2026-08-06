@@ -1,0 +1,26 @@
+{
+  "name": "@nicknisi/pi-stash",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stash and restore the current prompt draft",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

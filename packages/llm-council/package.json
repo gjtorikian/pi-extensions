@@ -1,0 +1,36 @@
+{
+  "name": "@nicknisi/pi-llm-council",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LLM Council — multiple models answer independently, chairman synthesizes",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts",
+    "config.ts",
+    "utils.ts",
+    "types.ts",
+    "README.md",
+    "llm-council.example.json",
+    "llm-council.project.example.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "typebox": "^1.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

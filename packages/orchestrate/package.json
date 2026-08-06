@@ -1,0 +1,26 @@
+{
+  "name": "@nicknisi/pi-orchestrate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-agent orchestration across pi sessions",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

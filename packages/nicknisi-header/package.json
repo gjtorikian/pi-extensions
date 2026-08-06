@@ -1,0 +1,32 @@
+{
+  "name": "@nicknisi/pi-nicknisi-header",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Animated header with custom frames for the pi TUI",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "files": [
+    "index.ts",
+    "frames-*.ts",
+    "gen-frames.mjs"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@nicknisi/pi-shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
