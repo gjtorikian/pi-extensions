@@ -13,11 +13,14 @@ standalone `paste-expand.ts` so the two features don't fight over
 
 ## What it adds
 
-- **Custom editor component** via `ctx.ui.setEditorComponent` (no slash
-  commands, no tools, no keybindings, no custom entry types).
-- **Events hooked**: `session_start` (installs the editor component) and
-  `session_shutdown` (removes it and tears down focus tracking). TUI mode
-  only; both handlers no-op when `ctx.mode !== "tui"`.
+- **Custom editor component** via `ctx.ui.setEditorComponent` (no tools, no
+  keybindings, no custom entry types).
+- **`/chat-input` command**: reloads `chat-input.json` without restarting pi
+  and previews the working animation for ~3 seconds.
+- **Events hooked**: `session_start` (installs the editor component),
+  `agent_start` / `agent_settled` (drive the working-state animations), and
+  `session_shutdown` (removes it and tears down focus tracking and animation
+  timers). TUI mode only; all handlers no-op when `ctx.mode !== "tui"`.
 - **Paste-again-to-expand**: overrides the editor's `handlePaste` to detect
   when an incoming paste matches an already-collapsed paste's stored content;
   if the marker `[paste #N ...]` is still in the buffer, the marker is replaced
@@ -33,6 +36,8 @@ standalone `paste-expand.ts` so the two features don't fight over
 - **Scroll indicators**: pi's stock `↑ N more` / `↓ N more` indicators are detected in the stock borders and re-embedded in the replacement borders
 - **Responsive**: below a minimum width (see caveats) the extension defers to pi's stock editor rendering
 - **Focus indicator**: border switches colour when the tmux pane holding this session has terminal focus (requires tmux `focus-events on`)
+- **Spinner prefix**: while pi is working, the prefix glyph animates as a spinner — pick from built-in presets or define your own frames (configurable speed and colour, including `"rainbow"`)
+- **Border glow**: while pi is working, the border either _pulses_ (breathes between the border colour and a glow colour) or _shimmers_ (a highlight sweeps along the top/bottom rules)
 
 ## Install
 
@@ -42,9 +47,10 @@ pi install /path/to/pi-extensions/packages/chat-input
 
 ## Usage
 
-Once installed, there is nothing to invoke — the editor component is installed
-automatically at session start. Editing, history, autocomplete, and paste
-behave as usual inside the box.
+Once installed, the editor component is installed automatically at session
+start. Editing, history, autocomplete, and paste behave as usual inside the
+box. Run `/chat-input` after editing the config to reload it in place and
+preview the spinner/glow without sending a prompt.
 
 Paste-again-to-expand works automatically too: pi collapses large pastes
 (>10 lines or >1000 chars) into `[paste #N +X lines]` markers; paste the same
@@ -65,10 +71,12 @@ Layout (boxed):
 
 ## Configuration
 
-Config is read once at extension load from
-`~/.pi/agent/configs/chat-input.json` — restart pi to apply changes. The path
-follows pi's agent dir, so it moves with `PI_CODING_AGENT_DIR` if you set it.
-Missing file or invalid JSON falls back to all defaults silently. Copy
+Config is read at extension load from
+`~/.pi/agent/configs/chat-input.json`; run `/chat-input` to reload it without
+restarting pi (it also previews the working animation). The path follows pi's
+agent dir, so it moves with `PI_CODING_AGENT_DIR` if you set it. A missing
+file means all defaults; invalid JSON is reported (at startup via a warning,
+on `/chat-input` via an error) and the previous/default config is kept. Copy
 `chat-input.example.json` from this package as a starting point.
 
 ```json
@@ -82,7 +90,14 @@ Missing file or invalid JSON falls back to all defaults silently. Copy
   "prefixColor": "accent",
   "corners": "rounded",
   "focusIndicator": true,
-  "focusedBorderColor": "accent"
+  "focusedBorderColor": "accent",
+  "spinner": true,
+  "spinnerStyle": "dots",
+  "spinnerColor": "accent",
+  "glow": true,
+  "glowStyle": "pulse",
+  "glowColor": "accent",
+  "glowPeriodMs": 2000
 }
 ```
 
@@ -98,6 +113,43 @@ Missing file or invalid JSON falls back to all defaults silently. Copy
 | `corners`            | `"rounded" \| "square"` | `"rounded"` | `rounded` = `╭╮│╰╯`, `square` = `┌┐│└┘`. Any other value falls back to `rounded`.                                        |
 | `focusIndicator`     | `boolean`               | `true`      | Track terminal focus (DECSET 1004) and restyle the border when this pane is focused. Requires `focus-events on` in tmux. |
 | `focusedBorderColor` | `string`                | `"accent"`  | Border colour while the pane is focused; `borderColor` is used when unfocused.                                           |
+| `spinner`            | `boolean`               | `true`      | Animate the prefix as a spinner while pi is working (between `agent_start` and `agent_settled`).                         |
+| `spinnerStyle`       | `string`                | `"dots"`    | Built-in spinner preset — see [Spinner presets](#spinner-presets). Unknown names fall back to `dots`.                    |
+| `spinnerFrames`      | `string[]`              | —           | Custom spinner frames; overrides `spinnerStyle`. Any cell width — the prefix slot is sized to the widest frame.          |
+| `spinnerIntervalMs`  | `number`                | per preset  | Milliseconds per spinner frame. Defaults to the active preset's tuned interval.                                          |
+| `spinnerColor`       | `string`                | `"accent"`  | Theme colour token, hex colour, or `"rainbow"` (hue rotates while spinning).                                             |
+| `glow`               | `boolean`               | `true`      | Animate the border while pi is working.                                                                                  |
+| `glowStyle`          | `"pulse" \| "shimmer"`  | `"pulse"`   | `pulse` breathes the whole border toward `glowColor`; `shimmer` sweeps a highlight along the top/bottom rules.           |
+| `glowColor`          | `string`                | `"accent"`  | Theme colour token, hex colour, or `"rainbow"` the glow animates toward.                                                 |
+| `glowPeriodMs`       | `number`                | `2000`      | Milliseconds per glow cycle (one full pulse breath or one shimmer sweep).                                                |
+| `rainbowPeriodMs`    | `number`                | `1200`      | Milliseconds per full hue rotation when a colour is set to `"rainbow"`.                                                  |
+
+### Spinner presets
+
+Each preset has a tuned default interval; set `spinnerIntervalMs` to override.
+
+| Preset         | Frames                       | Interval | Notes                                                                                              |
+| -------------- | ---------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `dots`         | `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`        | 80ms     | Classic braille dots (default).                                                                    |
+| `disc`         | `⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷`            | 90ms     | Dense braille disc with an orbiting gap.                                                           |
+| `moon`         | `🌑 🌒 🌓 🌔 🌕 🌖 🌗 🌘`    | 90ms     | Moon phases. Emoji — widens the prefix slot to 2 cells.                                            |
+| `star`         | `✶ ✸ ✹ ✺ ✹ ✸`                | 90ms     | Twinkling star — flares and dims.                                                                  |
+| `orbit`        | `◜ ◠ ◝ ◞ ◡ ◟`                | 80ms     | A dot orbiting a circle.                                                                           |
+| `corners`      | `▖ ▘ ▝ ▗`                    | 120ms    | A quarter-block bouncing around the cell's corners.                                                |
+| `triangle`     | `◢ ◣ ◤ ◥`                    | 120ms    | A spinning filled triangle.                                                                        |
+| `scanner`      | `●····· … ·····● …` (bounce) | 60ms     | KITT scanner — comet with a fading tail. **6 cells wide**, so the idle prefix slot is 6 cells too. |
+| `mini-scanner` | `●·· ·●· ··● ·●·`            | 120ms    | Scanner's little sibling — 3 cells, no tail.                                                       |
+
+Define your own with `spinnerFrames` (any array of non-empty strings; it takes
+precedence over `spinnerStyle`):
+
+```json
+{ "spinnerFrames": ["◐", "◓", "◑", "◒"], "spinnerIntervalMs": 100 }
+```
+
+The prefix slot is sized to the widest frame of the active spinner (idle `❯`
+included), so wide frames permanently indent the input — the layout never
+shifts when the agent starts or stops.
 
 ### Colour tokens
 
@@ -107,6 +159,17 @@ Any valid theme colour token works. See your active theme in
 `customMessageLabel`, …). Hex values must be 6-digit `#rrggbb`; invalid values
 fall back to the uncoloured text. Hex takes precedence over theme tokens in
 `applyColor`.
+
+`spinnerColor` and `glowColor` additionally accept `"rainbow"`: a truecolor
+hue rotation completing one full spectrum lap per `rainbowPeriodMs`. A rainbow
+`glowColor` makes the pulse breathe toward a continuously rotating hue (and
+the shimmer highlight cycle colours).
+
+The pulse anchors on `borderColor` (not the focus-adjusted border), so the
+default `border`→`accent` pulse is visible even while the pane is focused and
+the resting border is already `accent`. If you set `glowColor` equal to
+`borderColor`, the pulse has nothing to breathe toward and is invisible —
+pick two colours that differ.
 
 No environment variables are used.
 
@@ -149,9 +212,21 @@ No npm runtime dependencies; `node:fs` / `node:os` / `node:path` only.
 - **tmux**: the focus indicator only changes state if tmux has
   `focus-events on` (and the outer terminal passes focus events through).
   Outside tmux it works only if the terminal itself emits CSI I / CSI O.
-- **Config is load-time**: `chat-input.json` is read once at module load; edits
-  require a pi restart. There is no validation or error reporting — bad JSON or
-  wrong types fall back to defaults (or may throw at render time for wildly
-  wrong types).
+- **Config validation is shallow**: bad JSON is reported and numeric/enum
+  fields are range-checked, but wildly wrong types for unchecked string fields
+  (e.g. a number for `prefix`) may throw at render time.
+- **Reload doesn't rebuild the editor**: `/chat-input` mutates the live config
+  that render code reads, which covers every documented key. A key that only
+  takes effect at component construction would need a restart (none currently
+  do).
 - **setEditorComponent conflicts**: any other extension calling
   `setEditorComponent` after this one will replace the editor (last call wins).
+- **Pulse needs truecolor**: the pulse glow interpolates RGB between
+  `borderColor` and `glowColor`. Both endpoints must resolve to RGB —
+  hex values always do; theme tokens only if the theme emits truecolor
+  (`38;2;r;g;b`) sequences. If either endpoint can't be resolved, the border
+  falls back to a steady `glowColor` while working. Shimmer has no such
+  requirement.
+- **Animation cost**: while pi is working, a single timer requests a TUI
+  re-render every `spinnerIntervalMs` (or 80ms for glow-only). Idle sessions
+  have no timer running.
