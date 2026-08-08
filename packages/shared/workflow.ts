@@ -119,6 +119,8 @@ export interface RunWorkflowOptions {
   runDir?: string;
   /** A prior run's directory; stages recorded ok there are skipped and their outcomes loaded. */
   resumeFrom?: string;
+  /** Aborts every stage spawn (threaded into each runtime.spawn call). */
+  signal?: AbortSignal;
   onProgress?: (event: WorkflowEvent) => void;
 }
 
@@ -324,6 +326,7 @@ export async function runWorkflow(
       if (stage.maxTurns !== undefined) spawnOpts.maxTurns = stage.maxTurns;
       if (stage.maxToolCalls !== undefined) spawnOpts.maxToolCalls = stage.maxToolCalls;
       if (stage.timeoutMs !== undefined) spawnOpts.timeoutMs = stage.timeoutMs;
+      if (opts.signal !== undefined) spawnOpts.signal = opts.signal;
 
       let res: SpawnResult;
       try {

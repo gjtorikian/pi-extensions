@@ -74,7 +74,11 @@ function tmpRunDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'pi-workflow-test-'));
 }
 
-async function run(spec: WorkflowSpec, fake: FakeRuntime, extra: { runDir?: string; resumeFrom?: string } = {}) {
+async function run(
+  spec: WorkflowSpec,
+  fake: FakeRuntime,
+  extra: { runDir?: string; resumeFrom?: string; signal?: AbortSignal } = {},
+) {
   return runWorkflow(spec, fake, { cwd: '/tmp', runDir: extra.runDir ?? tmpRunDir(), ...extra });
 }
 
@@ -414,5 +418,23 @@ describe('runWorkflow', () => {
     expect(r2.ok).toBe(true);
     expect(second.calls.map((c) => c.prompt)).toEqual(['fail-first']);
     expect(r2.outcomes['a']?.ok).toBe(true);
+  });
+
+  it('threads opts.signal into every stage spawn', async () => {
+    const fake = makeFake(() => ok('done'));
+    const controller = new AbortController();
+    await run(
+      {
+        name: 'signal',
+        stages: [
+          { id: 'a', needs: [], prompt: 'A' },
+          { id: 'b', needs: ['a'], prompt: 'B', foreach: [1, 2] },
+        ],
+      },
+      fake,
+      { signal: controller.signal },
+    );
+    expect(fake.calls.length).toBe(3);
+    for (const call of fake.calls) expect(call.signal).toBe(controller.signal);
   });
 });
