@@ -316,7 +316,12 @@ export function readRunArtifacts(rootDir: string): RunArtifact[] {
       read++;
       try {
         const parsed = JSON.parse(fs.readFileSync(path.join(dir, file.name), 'utf8'));
-        if (parsed && typeof parsed.runId === 'string' && typeof parsed.status === 'string') {
+        if (
+          parsed &&
+          typeof parsed.runId === 'string' &&
+          typeof parsed.status === 'string' &&
+          typeof parsed.promptPreview === 'string'
+        ) {
           out.push(parsed as RunArtifact);
         }
       } catch {

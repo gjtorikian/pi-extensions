@@ -18,13 +18,7 @@
  */
 
 import * as path from 'node:path';
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionUIContext,
-  Theme,
-  ToolDefinition,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext, Theme } from '@earendil-works/pi-coding-agent';
 import { getAgentDir, getSelectListTheme } from '@earendil-works/pi-coding-agent';
 import {
   getKeybindings,
@@ -49,7 +43,7 @@ import {
   type SpawnResult,
   type SpawnUsage,
 } from '@nicknisi/pi-shared';
-import { Type, type TSchema } from 'typebox';
+import { Type } from 'typebox';
 
 const ARTIFACTS_ROOT = path.join(getAgentDir(), 'subagent-runs');
 const MAX_TASKS = 8;
@@ -101,19 +95,6 @@ function wantsTreeMutation(spec: TaskSpec): boolean {
   return (spec.tools ?? []).some((tool) => TREE_MUTATING_TOOLS.has(tool));
 }
 
-function registerTool<TParams extends TSchema>(pi: ExtensionAPI, tool: ToolDefinition<TParams>): void {
-  try {
-    pi.registerTool(tool);
-  } catch (err) {
-    if (err instanceof Error && /already registered|duplicate|conflict/i.test(err.message)) {
-      throw new Error(
-        `@nicknisi/pi-subagents: another extension (likely nicobailon/pi-subagents) already registers the '${tool.name}' tool — uninstall it first (e.g. \`pi remove pi-subagents\`), then reload. Original error: ${err.message}`,
-      );
-    }
-    throw err;
-  }
-}
-
 function toSpawnOptions(spec: TaskSpec, cwd: string): SpawnOptions {
   const opts: SpawnOptions = {
     prompt: spec.task,
@@ -155,7 +136,7 @@ function relativeTime(timestamp: number): string {
 function formatRunLine(run: RunArtifact): string {
   const bits = [run.status, formatSeconds(run.startedAt, run.endedAt) + (run.endedAt ? '' : '…')];
   const tokens = formatTokens(run.usage);
-  return `- ${run.runId.slice(0, 8)} [${run.namespace}]${run.agent ? ` ${run.agent}` : ''} — ${bits.join(', ')}${tokens} · ${short(run.promptPreview, 60)}`;
+  return `- ${run.runId.slice(0, 8)} [${run.namespace}]${run.agent ? ` ${run.agent}` : ''} — ${bits.join(', ')}${tokens} · ${short(run.promptPreview ?? '', 60)}`;
 }
 
 function collectFleet(live: RunArtifact[]): RunArtifact[] {
@@ -363,7 +344,7 @@ class FleetOverlay implements Component, Focusable {
     const items: SelectItem[] = runs.map((run) => ({
       value: run.runId,
       label: `${runIcon(run, theme)} ${sanitizeTerminalLabel(runTitle(run))}`,
-      description: `${relativeTime(run.startedAt)} · ${short(sanitizeTerminalLabel(run.promptPreview), 60)}`,
+      description: `${relativeTime(run.startedAt)} · ${short(sanitizeTerminalLabel(run.promptPreview ?? ''), 60)}`,
     }));
     this.list = new SearchableSelectList(items, Math.min(Math.max(items.length, 1), 12), getSelectListTheme());
     this.list.onSelect = (item) => {
@@ -425,7 +406,7 @@ class FleetOverlay implements Component, Focusable {
     if (run.usage) meta.push(`${(run.usage.totalTokens / 1000).toFixed(1)}k tok`);
     lines.push(theme.fg('muted', meta.join(' · ')));
     if (run.model) lines.push(theme.fg('muted', `model: ${run.model}`));
-    lines.push(theme.fg('dim', short(sanitizeTerminalLabel(run.promptPreview), Math.max(20, contentWidth))));
+    lines.push(theme.fg('dim', short(sanitizeTerminalLabel(run.promptPreview ?? ''), Math.max(20, contentWidth))));
     if (run.error) lines.push(theme.fg('error', `error: ${short(sanitizeTerminalLabel(run.error), 200)}`));
     lines.push(theme.fg('borderMuted', '─'.repeat(Math.max(1, contentWidth))));
     const output = run.output?.trim();
@@ -509,7 +490,7 @@ class FleetOverlay implements Component, Focusable {
 export default function subagents(pi: ExtensionAPI) {
   const runtime = createSubagentRuntime({ namespace: 'subagents', artifactsDir: ARTIFACTS_ROOT });
 
-  registerTool(pi, {
+  pi.registerTool({
     name: 'dispatch',
     label: 'Dispatch Subagents',
     description: [
@@ -760,7 +741,7 @@ export default function subagents(pi: ExtensionAPI) {
     },
   });
 
-  registerTool(pi, {
+  pi.registerTool({
     name: 'fleet',
     label: 'Subagent Fleet',
     description:

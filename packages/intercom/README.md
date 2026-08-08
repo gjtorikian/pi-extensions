@@ -58,7 +58,7 @@ The directory is created `0700` and every file `0600` — other users on the mac
 
 ## Migrating from nicobailon/pi-intercom
 
-Uninstall it first (`pi remove` / remove from packages) — both register the `intercom` tool and pi treats duplicate tool names as fatal at startup. Ours is a deliberate drop-in: the tool name, action surface (`list`, `list-cwd`, `send`, `ask`, `reply`, `pending`, `cancel`, `status`), and name/short-id targeting carry over, so skills and habits keep working. Not carried over: attachments (plain text only — send a path), and the broker daemon itself (nothing to run, supervise, or leak).
+**Uninstall nicobailon/pi-intercom BEFORE loading this package** (`pi remove pi-intercom`). Both register the `intercom` tool; pi detects the conflict at startup and refuses to load the second extension, printing `Failed to load extension … Tool "intercom" conflicts with <path>` — loud and named, but your session won't start with both. Ours is a deliberate drop-in: the tool name, action surface (`list`, `list-cwd`, `send`, `ask`, `reply`, `pending`, `cancel`, `status`), and name/short-id targeting carry over, so skills and habits keep working. Not carried over: attachments (plain text only — send a path), and the broker daemon itself (nothing to run, supervise, or leak).
 
 ## Caveats
 
