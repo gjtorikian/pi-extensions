@@ -25,8 +25,9 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import { getKeybindings, Text } from '@earendil-works/pi-tui';
 import {
   createSubagentRuntime,
   runWorkflow,
@@ -73,6 +74,103 @@ function mergeSignals(...signals: Array<AbortSignal | undefined>): AbortSignal |
 function formatError(err: unknown): string {
   if (err instanceof Error) return `${err.message}${err.stack ? `\n\n${truncate(err.stack, MAX_STACK_CHARS)}` : ''}`;
   return String(err);
+}
+
+// ── TUI rendering ────────────────────────────────────────────────────────
+// Presentation only — the tool's text content stays authoritative for the
+// model. Visual vocabulary matches llm-council: ✓/✗ prefixes, └─ branch
+// lines, indented sub-lines, dim metadata, one accent color (the label).
+
+interface CodemodeDetails {
+  label: string;
+  logs: string[];
+  durationMs: number;
+  error?: string;
+  stack?: string;
+}
+
+const SPINNER_CHARS = ['·', '✢', '✳', '✶', '✻', '✽'];
+const SPINNER_FRAMES = [...SPINNER_CHARS, ...[...SPINNER_CHARS].reverse()];
+const SPINNER_INTERVAL_MS = 80;
+const BRANCH_PREFIX = '└─';
+const INDENT = '   '; // visible width of '└─' + 1
+const RESULT_PREVIEW_LINES = 10;
+const CODE_PREVIEW_MAX = 60;
+
+function fg(theme: Theme, color: ThemeColor, text: string): string {
+  try {
+    return theme.fg(color, text);
+  } catch {
+    return text;
+  }
+}
+
+function makeText(lastComponent: unknown, text: string): Text {
+  const comp = lastComponent instanceof Text ? lastComponent : new Text('', 0, 0);
+  comp.setText(text);
+  return comp;
+}
+
+function branchLine(theme: Theme, text: string): string {
+  return `${fg(theme, 'muted', BRANCH_PREFIX)} ${text}`;
+}
+
+function indentLine(text: string): string {
+  return `${INDENT}${text}`;
+}
+
+function expandHint(theme: Theme): string {
+  const key = getKeybindings().getKeys('app.tools.expand')[0] ?? 'ctrl+o';
+  return fg(theme, 'dim', ` • ${key} to expand`);
+}
+
+function formatDuration(ms: number | undefined): string {
+  if (ms === undefined) return '';
+  if (ms < 1000) return `(${Math.round(ms)}ms)`;
+  if (ms < 60_000) return `(${(ms / 1000).toFixed(1)}s)`;
+  return `(${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s)`;
+}
+
+/** First meaningful (non-blank) code line, trimmed and capped, plus total lines. */
+function codePreview(code: string | undefined): { line: string; count: number } {
+  if (!code) return { line: '...', count: 0 };
+  const lines = code.split('\n');
+  const first = lines.find((l) => l.trim().length > 0)?.trim() ?? '...';
+  return {
+    line: first.length > CODE_PREVIEW_MAX ? `${first.slice(0, CODE_PREVIEW_MAX)}…` : first,
+    count: lines.length,
+  };
+}
+
+function appendLogTree(lines: string[], logs: string[], theme: Theme): void {
+  if (logs.length === 0) return;
+  lines.push('');
+  lines.push(branchLine(theme, `${fg(theme, 'muted', 'logs')} ${fg(theme, 'dim', `(${logs.length})`)}`));
+  for (const entry of logs) {
+    for (const line of entry.split('\n')) lines.push(indentLine(fg(theme, 'dim', line)));
+  }
+}
+
+function ensureSpinner(ctx: any): number {
+  if (ctx?.state?.spinnerInterval) return ctx.state.spinnerFrame ?? 0;
+  if (!ctx?.state) ctx.state = {};
+  ctx.state.spinnerFrame = 0;
+  ctx.state.spinnerInterval = setInterval(() => {
+    ctx.state.spinnerFrame = (ctx.state.spinnerFrame + 1) % SPINNER_FRAMES.length;
+    ctx.invalidate?.();
+  }, SPINNER_INTERVAL_MS);
+  return 0;
+}
+
+function clearSpinner(ctx: any) {
+  if (ctx?.state?.spinnerInterval) {
+    clearInterval(ctx.state.spinnerInterval);
+    ctx.state.spinnerInterval = undefined;
+  }
+}
+
+function spinnerDot(theme: Theme, frame: number): string {
+  return `${fg(theme, 'muted', SPINNER_FRAMES[frame % SPINNER_FRAMES.length]!)} `;
 }
 
 export default function codemode(pi: ExtensionAPI) {
@@ -223,6 +321,7 @@ export default function codemode(pi: ExtensionAPI) {
             logs,
             durationMs: Date.now() - startedAt,
             error: err instanceof Error ? err.message : String(err),
+            ...(err instanceof Error && err.stack ? { stack: truncate(err.stack, MAX_STACK_CHARS) } : {}),
           },
         };
       } finally {
@@ -231,6 +330,76 @@ export default function codemode(pi: ExtensionAPI) {
         fs.rmSync(dir, { recursive: true, force: true });
         release(); // let the next queued run set its own bindings
       }
+    },
+
+    renderCall(args, theme, ctx) {
+      const label = args.label?.trim() || 'codemode';
+      const preview = codePreview(args.code);
+      const header = `${fg(theme, 'toolTitle', theme.bold('Codemode'))} ${fg(theme, 'accent', label)}`;
+      const meta = fg(theme, 'dim', `${preview.line} · ${preview.count} ${preview.count === 1 ? 'line' : 'lines'}`);
+      const body = `${header}\n${branchLine(theme, meta)}`;
+
+      if (!ctx?.isPartial) {
+        clearSpinner(ctx);
+        return makeText(ctx?.lastComponent, `${fg(theme, 'success', '✓')} ${body}`);
+      }
+      return makeText(ctx.lastComponent, `${spinnerDot(theme, ensureSpinner(ctx))}${body}`);
+    },
+
+    renderResult(result, options, theme, ctx) {
+      const details = result.details as CodemodeDetails | undefined;
+      const expanded = options?.expanded ?? false;
+      const content = result.content[0];
+      const fullText = content?.type === 'text' ? content.text : '';
+
+      // No details — plain text fallback
+      if (!details) {
+        return makeText(ctx?.lastComponent, fullText || '(no output)');
+      }
+
+      const logs = details.logs ?? [];
+      const label = fg(theme, 'accent', details.label);
+      const duration = fg(theme, 'dim', formatDuration(details.durationMs));
+
+      // ── Error state ──────────────────────────────────────────────
+      if (details.error) {
+        const header = `${fg(theme, 'error', '✗')} ${label} ${duration}`;
+        const firstLine = details.error.split('\n')[0] ?? details.error;
+        if (!expanded) {
+          const lines = [header, `${branchLine(theme, fg(theme, 'error', firstLine))}${expandHint(theme)}`];
+          return makeText(ctx?.lastComponent, lines.join('\n'));
+        }
+        const lines = [header, branchLine(theme, fg(theme, 'error', firstLine))];
+        if (details.stack) {
+          for (const line of details.stack.split('\n')) lines.push(indentLine(fg(theme, 'dim', line)));
+        }
+        appendLogTree(lines, logs, theme);
+        return makeText(ctx?.lastComponent, lines.join('\n'));
+      }
+
+      // ── Success ──────────────────────────────────────────────────
+      const header = `${fg(theme, 'success', '✓')} ${label} ${duration}`;
+      const resultLines = fullText.split('\n');
+
+      // Collapsed: first ~10 lines + dim overflow marker
+      if (!expanded) {
+        const shown = resultLines.slice(0, RESULT_PREVIEW_LINES);
+        const remaining = resultLines.length - shown.length;
+        const lines = [header];
+        shown.forEach((line, i) => lines.push(i === 0 ? branchLine(theme, line) : indentLine(line)));
+        if (remaining > 0) {
+          lines.push(`${indentLine(fg(theme, 'dim', `+${remaining} more lines`))}${expandHint(theme)}`);
+        } else if (logs.length > 0) {
+          lines[0] = `${header}${expandHint(theme)}`;
+        }
+        return makeText(ctx?.lastComponent, lines.join('\n'));
+      }
+
+      // Expanded: full result + captured logs as an indented tree section
+      const lines = [header];
+      resultLines.forEach((line, i) => lines.push(i === 0 ? branchLine(theme, line) : indentLine(line)));
+      appendLogTree(lines, logs, theme);
+      return makeText(ctx?.lastComponent, lines.join('\n'));
     },
   });
 }
