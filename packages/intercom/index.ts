@@ -17,7 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { getKeybindings, Text } from '@earendil-works/pi-tui';
+import { Box, getKeybindings, Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 import {
   formatDelivery,
@@ -536,7 +536,10 @@ export default function intercom(pi: ExtensionAPI) {
       return undefined; // pre-renderer entries: keep pi's default custom-message box
     }
     const id8 = d.id.slice(0, 8);
-    const header = `📨 ${theme.fg('accent', theme.bold(displayName(d.from.name)))} ${theme.fg('dim', `(${shortCwd(d.from.cwd)})`)} ${theme.fg('dim', `[${d.kind}]`)}`;
+    // Header: bold accent name + dim cwd + an inverse kind chip — the chip is
+    // what makes a delivery pop from ordinary transcript text at a glance.
+    const chip = theme.inverse(` ${d.kind.toUpperCase()} `);
+    const header = `${theme.fg('accent', theme.bold(displayName(d.from.name)))} ${theme.fg('dim', `(${shortCwd(d.from.cwd)})`)} ${chip}`;
 
     // Compact by default: cap the body, with council-style progressive disclosure.
     const MAX_LINES = 6;
@@ -563,7 +566,11 @@ export default function intercom(pi: ExtensionAPI) {
     if (truncated) {
       out.push(theme.fg('dim', `… ${expandToggleKey()} to expand`));
     }
-    return new Text(out.join('\n'), 0, 0);
+    // Whole card on the theme's custom-message background, full width —
+    // peer mail is visually a different thing from user/assistant text.
+    const box = new Box(1, 1, (t) => theme.bg('customMessageBg', t));
+    box.addChild(new Text(out.join('\n'), 0, 0));
+    return box;
   });
 
   // ── /intercom listing ──────────────────────────────────────────────────
