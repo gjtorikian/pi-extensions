@@ -23,13 +23,25 @@ npm whoami --registry="$REGISTRY" >/dev/null 2>&1 || {
 # Phase 1: publish packages that don't exist on npm yet.
 # `pnpm publish` (not npm) so workspace:* ranges rewrite to real versions.
 publish_pkg() {
-  local dir="$1" name
+  local dir="$1" name version
   name="$(node -p "require('$ROOT/packages/$dir/package.json').name")"
-  if npm view "$name" version --registry="$REGISTRY" >/dev/null 2>&1; then
-    echo "== $name already on npm, skipping publish"
+  version="$(node -p "require('$ROOT/packages/$dir/package.json').version")"
+  # NOTE: `npm view <name>` can 404 on a lagging read replica minutes after a
+  # successful publish (this happened with pi-relay). Query the exact version
+  # endpoint instead — it reads authoritatively — and treat a 403
+  # 'previously published' from the publish attempt itself as success.
+  if curl -sf "$REGISTRY/$(echo "$name" | sed 's|/|%2f|')/$version" >/dev/null 2>&1; then
+    echo "== $name@$version already on npm, skipping publish"
   else
-    echo "== publishing $name"
-    (cd "$ROOT/packages/$dir" && pnpm publish --access public --no-git-checks --registry="$REGISTRY")
+    echo "== publishing $name@$version"
+    if ! (cd "$ROOT/packages/$dir" && pnpm publish --access public --no-git-checks --registry="$REGISTRY"); then
+      if curl -sf "$REGISTRY/$(echo "$name" | sed 's|/|%2f|')/$version" >/dev/null 2>&1; then
+        echo "== $name@$version showed up after the failed publish (replica lag) — continuing"
+      else
+        echo "!! publish of $name failed for real" >&2
+        exit 1
+      fi
+    fi
     sleep 2
   fi
 }
@@ -50,8 +62,19 @@ for dir in "$ROOT"/packages/*/; do
     echo "== $name already trusts $REPO/$WORKFLOW, skipping"
     continue
   fi
+  # NOTE: `npm trust list` itself can require 2FA and fail silently above —
+  # so also treat a 409 from the create call as 'already configured' (npm
+  # allows exactly one trusted publisher per package).
   echo "== trusting $name -> $REPO ($WORKFLOW)"
-  npm trust github "$name" --file "$WORKFLOW" --repo "$REPO" --allow-publish --yes --registry="$REGISTRY"
+  if npm trust github "$name" --file "$WORKFLOW" --repo "$REPO" --allow-publish --yes --registry="$REGISTRY" 2>&1 | tee /tmp/npm-trust-$$.log | grep -q "E409\|409 Conflict"; then
+    echo "== $name already has a trusted publisher (409) — verify it's $REPO/$WORKFLOW in the npm UI"
+  elif [ "${PIPESTATUS[0]}" -ne 0 ]; then
+    echo "!! trust failed for $name" >&2
+    cat /tmp/npm-trust-$$.log >&2
+    rm -f /tmp/npm-trust-$$.log
+    exit 1
+  fi
+  rm -f /tmp/npm-trust-$$.log
   sleep 2
 done
 
