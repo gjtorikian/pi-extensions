@@ -7,10 +7,13 @@
  * the module's default export as the result.
  *
  * The snippet runs standalone — no imports resolve from the temp dir. Its
- * entire API is two injected bindings:
+ * entire API is three injected bindings:
  *
  *   spawn(options: SpawnOptions): Promise<SpawnResult>  — shared-runtime
  *     spawn (namespace 'codemode'); never rejects, check result.ok.
+ *   runWorkflow(spec: WorkflowSpec, opts?): Promise<WorkflowResult> —
+ *     declarative multi-stage DAGs over spawn (needs/foreach/gates/retries,
+ *     sharesTree tree-diff handoff, control artifacts); never rejects.
  *   log(...args): void — captured into the tool result's details.
  *
  * Safety posture: this executes model-written code with the host process's
@@ -23,7 +26,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { createSubagentRuntime, type SpawnOptions, type SpawnResult } from '@nicknisi/pi-shared';
+import {
+  createSubagentRuntime,
+  runWorkflow,
+  type RunWorkflowOptions,
+  type SpawnOptions,
+  type SpawnResult,
+  type WorkflowResult,
+  type WorkflowSpec,
+} from '@nicknisi/pi-shared';
 import { bundleRequire } from 'bundle-require';
 import { Type } from 'typebox';
 
@@ -35,7 +46,7 @@ const MAX_STACK_CHARS = 4000;
 const MAX_LOG_ENTRIES = 200;
 const MAX_LOG_CHARS = 2000;
 
-const BINDINGS_PRELUDE = 'const { spawn, log } = (globalThis as any).__piCodemode;\n';
+const BINDINGS_PRELUDE = 'const { spawn, log, runWorkflow } = (globalThis as any).__piCodemode;\n';
 const GLOBAL_KEY = '__piCodemode';
 
 function truncate(text: string, max: number): string {
@@ -83,8 +94,16 @@ export default function codemode(pi: ExtensionAPI) {
       'includeContextFiles?: boolean; outputSchema?: TypeBox-like JSON schema object (validated;',
       'parsed JSON lands in result.data); cwd?: string; timeoutMs?: number (default 15 min);',
       'maxTurns?: number; maxToolCalls?: number; thinkingLevel?: string }. Composition — Promise.all',
-      'fan-out, sequential pipelines, map/reduce over files — is your code. No imports resolve;',
-      'spawn and log are the whole API. Keep the default export SMALL (summaries, counts, key',
+      'Composition — Promise.all',
+      'fan-out, sequential pipelines, map/reduce over files — is your code. For dependent multi-stage',
+      'work use runWorkflow(spec, opts?): { name, stages: [{ id, prompt (string or (ctx, item?, index?)',
+      '=> string; ctx = { results, treeDiffs, cwd, runDir }), needs?: string[] (default: previous stage),',
+      'model?, tools?, systemPrompt?, outputSchema?, foreach?: unknown[] | { from: stageId, pick?: (outcome)',
+      '=> unknown[] }, gate?: (outcome, ctx) => true | { revise: feedback }, maxGateAttempts?, retries?,',
+      'sharesTree?: boolean (never overlaps other stages; its git diff HEAD flows to dependents via',
+      'treeDiffs), maxTurns?, maxToolCalls?, timeoutMs? }], concurrency?, tokenBudget? } — resolves to',
+      '{ ok, outcomes, usage, runDir }; never rejects. No imports resolve;',
+      'spawn, runWorkflow, and log are the whole API. Keep the default export SMALL (summaries, counts, key',
       'findings) — never raw file dumps.',
     ].join(' '),
     promptSnippet: 'Run TypeScript that orchestrates subagents compositionally',
@@ -93,8 +112,9 @@ export default function codemode(pi: ExtensionAPI) {
       'spawn never rejects: check result.ok and read result.error/result.kind on failure instead of try/catch around spawn.',
       'Fan out independent work with Promise.all([...]) and pass read-only tool allowlists (read, grep, find, ls) to research children.',
       'Wrap risky non-spawn steps (parsing, arithmetic on untrusted shapes) in try/catch — a thrown error fails the whole run.',
+      'Prefer runWorkflow over hand-rolled Promise.all when stages depend on each other, need gates/retries, or edit the working tree.',
       'Use log(...) for progress notes; they come back in the result details.',
-      'Do not attempt imports — the snippet is bundled standalone and only spawn/log are available.',
+      'Do not attempt imports — the snippet is bundled standalone and only spawn/runWorkflow/log are available.',
     ],
     parameters: Type.Object({
       code: Type.String({ description: 'TypeScript source. Must `export default` the result.' }),
@@ -131,6 +151,16 @@ export default function codemode(pi: ExtensionAPI) {
         return runtime.spawn(opts);
       };
 
+      const boundRunWorkflow = (
+        spec: WorkflowSpec,
+        wfOpts: Partial<RunWorkflowOptions> = {},
+      ): Promise<WorkflowResult> => {
+        const merged = mergeSignals(wfOpts.signal, signal ?? undefined, controller.signal);
+        const full: RunWorkflowOptions = { cwd: ctx.cwd, ...wfOpts };
+        if (merged) full.signal = merged;
+        return runWorkflow(spec, runtime, full);
+      };
+
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-codemode-'));
       const file = path.join(dir, 'snippet.ts');
       fs.writeFileSync(file, BINDINGS_PRELUDE + params.code);
@@ -145,7 +175,7 @@ export default function codemode(pi: ExtensionAPI) {
         return mod.default;
       };
 
-      (globalThis as any)[GLOBAL_KEY] = { spawn, log };
+      (globalThis as any)[GLOBAL_KEY] = { spawn, log, runWorkflow: boundRunWorkflow };
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const execPromise = runSnippet();
