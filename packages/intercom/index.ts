@@ -13,9 +13,11 @@
 
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import { Box, getKeybindings, Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 import {
   formatDelivery,
@@ -39,12 +41,86 @@ import {
   type Letter,
 } from './mailbox.js';
 import { OutboundPolicy, inboundAccepts } from './policy.js';
-import { deriveAddr, ensureRoot, listRecords, presenceOf, sweep, writeRecord, type SessionRecord } from './registry.js';
+import {
+  deriveAddr,
+  ensureRoot,
+  listRecords,
+  presenceOf,
+  sweep,
+  writeRecord,
+  type Presence,
+  type SessionRecord,
+} from './registry.js';
 
 type AskOutcome = { replied: true; body: string; from: string } | { replied: false; reason: string };
 
 function toolResult(text: string, details: Record<string, unknown> = {}) {
   return { content: [{ type: 'text' as const, text }], details };
+}
+
+// ── Transcript rendering (TUI presentation only) ────────────────────────
+// The delivery CONTENT string (formatDelivery) is what the model reads and
+// stays byte-for-byte complete; these renderers only change how the entries
+// look in the terminal. Visual vocabulary matches llm-council: one accent,
+// dim metadata, └─ hints, ✓/✗-family status glyphs.
+
+const DELIVERY_TYPE = 'intercom:delivery';
+const LIST_TYPE = 'intercom:list';
+
+/** Presentation metadata for a delivery. `details` is never sent to the LLM. */
+interface DeliveryDetails {
+  id: string;
+  kind: Letter['kind'];
+  from: { addr: string; name: string; cwd: string };
+  ts: number;
+  body: string;
+  replyTo?: string;
+}
+
+interface IntercomListRow {
+  name: string;
+  addr: string;
+  cwd: string;
+  presence: Presence;
+  status: SessionRecord['status'];
+}
+
+/** Strip peer-supplied ANSI escapes/control chars before they reach the terminal. */
+function sanitizeTerminal(text: string): string {
+  return (
+    text
+      // eslint-disable-next-line no-control-regex -- intentionally strips CSI sequences
+      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+      // eslint-disable-next-line no-control-regex -- intentionally strips OSC sequences
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, '')
+      // eslint-disable-next-line no-control-regex -- intentionally strips C0 controls (keeps \n \t)
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+  );
+}
+
+/** One-line display name, length-capped. */
+function displayName(name: string): string {
+  return sanitizeTerminal(name.replace(/\s+/g, ' ')).slice(0, 40);
+}
+
+/** Collapse $HOME to ~ for display. */
+function shortCwd(cwd: string): string {
+  const home = os.homedir();
+  const display = cwd === home ? '~' : cwd.startsWith(`${home}/`) ? `~/${cwd.slice(home.length + 1)}` : cwd;
+  return sanitizeTerminal(display);
+}
+
+/** "12s ago" / "3m ago" / "2h ago" — mirrors format.ts's age(). */
+function relativeTime(ts: number, now: number = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.round(m / 60)}h ago`;
+}
+
+function expandToggleKey(): string {
+  return getKeybindings().getKeys('app.tools.expand')[0] ?? 'ctrl+o';
 }
 
 // ── Resumability (for sweep) ─────────────────────────────────────────────
@@ -113,11 +189,21 @@ export default function intercom(pi: ExtensionAPI) {
       }
     }
     if (letter.kind === 'ask') trackIncomingAsk(root, self!.addr, letter);
+    // details feeds the TUI renderer only (never sent to the LLM); content
+    // remains the full model-facing delivery text.
+    const details: DeliveryDetails = {
+      id: letter.id,
+      kind: letter.kind,
+      from: letter.from,
+      ts: letter.ts,
+      body: letter.body,
+      ...(letter.replyTo !== undefined ? { replyTo: letter.replyTo } : {}),
+    };
     const message = {
-      customType: 'intercom:delivery',
+      customType: DELIVERY_TYPE,
       content: formatDelivery(letter),
       display: true,
-      details: { id: letter.id, kind: letter.kind, from: letter.from },
+      details,
     };
     // steer lands between tool calls mid-run; triggerTurn wakes an idle
     // session. A busy agent rejects triggerTurn ("Agent is already
@@ -440,18 +526,99 @@ export default function intercom(pi: ExtensionAPI) {
     throw err;
   }
 
+  // ── Delivery card ──────────────────────────────────────────────────────
+  // Deliveries are custom MESSAGES (they must stay in LLM context), so the
+  // TUI renders them via registerMessageRenderer — an entry renderer would
+  // never fire for them.
+  pi.registerMessageRenderer<DeliveryDetails>(DELIVERY_TYPE, (message, { expanded }, theme) => {
+    const d = message.details;
+    if (!d || typeof d.id !== 'string' || typeof d.ts !== 'number' || typeof d.body !== 'string' || !d.from) {
+      return undefined; // pre-renderer entries: keep pi's default custom-message box
+    }
+    const id8 = d.id.slice(0, 8);
+    // Header: bold accent name + dim cwd + an inverse kind chip — the chip is
+    // what makes a delivery pop from ordinary transcript text at a glance.
+    const chip = theme.inverse(` ${d.kind.toUpperCase()} `);
+    const header = `${theme.fg('accent', theme.bold(displayName(d.from.name)))} ${theme.fg('dim', `(${shortCwd(d.from.cwd)})`)} ${chip}`;
+
+    // Compact by default: cap the body, with council-style progressive disclosure.
+    const MAX_LINES = 6;
+    const MAX_CHARS = 1200;
+    let body = sanitizeTerminal(d.body);
+    let truncated = false;
+    if (!expanded) {
+      const lines = body.split('\n');
+      if (lines.length > MAX_LINES) {
+        body = lines.slice(0, MAX_LINES).join('\n');
+        truncated = true;
+      }
+      if (body.length > MAX_CHARS) {
+        body = `${body.slice(0, MAX_CHARS)}…`;
+        truncated = true;
+      }
+    }
+
+    const footer = theme.fg('dim', `id ${id8} · ${d.kind} · ${relativeTime(d.ts)}`);
+    const out = [header, body, '', footer];
+    if (d.kind === 'ask') {
+      out.push(theme.fg('dim', `└─ reply via intercom { action: "reply", replyTo: "${id8}" }`));
+    }
+    if (truncated) {
+      out.push(theme.fg('dim', `… ${expandToggleKey()} to expand`));
+    }
+    // Whole card on the theme's custom-message background, full width —
+    // peer mail is visually a different thing from user/assistant text.
+    const box = new Box(1, 1, (t) => theme.bg('customMessageBg', t));
+    box.addChild(new Text(out.join('\n'), 0, 0));
+    return box;
+  });
+
+  // ── /intercom listing ──────────────────────────────────────────────────
+  // A custom ENTRY (appendEntry): the listing is for the human, never the
+  // model — the tool's list action already serves context.
+  pi.registerEntryRenderer<{ rows: IntercomListRow[] }>(LIST_TYPE, (entry, _options, theme) => {
+    const rows = entry.data?.rows;
+    if (!rows) return undefined;
+    if (rows.length === 0) {
+      return new Text(theme.fg('dim', '· No other pi sessions registered.'), 0, 0);
+    }
+    const clean = rows.map((r) => ({ ...r, name: displayName(r.name).slice(0, 24) }));
+    const nameW = Math.max(...clean.map((r) => r.name.length));
+    const lines = [theme.fg('dim', `intercom · ${clean.length} session${clean.length === 1 ? '' : 's'}`)];
+    for (const r of clean) {
+      const dot =
+        r.presence === 'live'
+          ? theme.fg('success', '●')
+          : r.presence === 'stalled'
+            ? theme.fg('warning', '●')
+            : theme.fg('dim', '○');
+      const state = r.presence === 'live' ? r.status : r.presence === 'stalled' ? 'not responding' : 'offline';
+      const meta = theme.fg('dim', `${shortAddr(r.addr)}  ${shortCwd(r.cwd)}  ${state}`);
+      lines.push(`${dot} ${theme.fg('accent', r.name.padEnd(nameW))} ${meta}`);
+    }
+    return new Text(lines.join('\n'), 0, 0);
+  });
+
   pi.registerCommand('intercom', {
     description: 'List registered pi sessions (the intercom mailbox listing)',
-    handler: async (_args, _ctx) => {
-      const text = self
-        ? formatListing(listRecords(root), self.addr, (r) => presenceOf(r))
-        : 'Intercom is not initialized (no session_start yet).';
-      pi.sendMessage({
-        customType: 'intercom:list',
-        content: text,
-        display: true,
-        details: { kind: 'intercom-list' },
-      });
+    handler: async (_args, ctx) => {
+      if (!self || !ctx.hasUI) {
+        // Plain-text fallback (print/rpc mode): the entry renderer never runs there.
+        const text = self
+          ? formatListing(listRecords(root), self.addr, (r) => presenceOf(r))
+          : 'Intercom is not initialized (no session_start yet).';
+        pi.sendMessage({
+          customType: LIST_TYPE,
+          content: text,
+          display: true,
+          details: { kind: 'intercom-list' },
+        });
+        return;
+      }
+      const rows: IntercomListRow[] = listRecords(root)
+        .filter((r) => r.addr !== self!.addr)
+        .map((r) => ({ name: r.name, addr: r.addr, cwd: r.cwd, presence: presenceOf(r), status: r.status }));
+      pi.appendEntry(LIST_TYPE, { rows });
     },
   });
 }

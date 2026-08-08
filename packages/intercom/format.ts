@@ -23,7 +23,7 @@ function age(ts: number, now: number): string {
 
 /** Delivery text injected into the receiving session. */
 export function formatDelivery(letter: Letter, now: number = Date.now()): string {
-  const header = `📨 From pi session "${letter.from.name}" (${letter.from.cwd})`;
+  const header = `From pi session "${letter.from.name}" (${letter.from.cwd})`;
   const meta = `_id ${letter.id} · ${letter.kind} · sent ${age(letter.ts, now)}_`;
   const hint =
     letter.kind === 'ask'
