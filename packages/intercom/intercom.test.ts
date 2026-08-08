@@ -21,7 +21,7 @@ import {
   watchInbox,
   type Letter,
 } from './mailbox.js';
-import { BACKLOG_CAP, OutboundPolicy } from './policy.js';
+import { BACKLOG_CAP, OutboundPolicy, inboundAccepts } from './policy.js';
 import { deriveAddr, listRecords, presenceOf, sweep, writeRecord, type SessionRecord } from './registry.js';
 
 const dirs: string[] = [];
@@ -210,6 +210,19 @@ describe('mailbox', () => {
     expect(unreadCount(root, addr)).toBe(1);
     // "resume": drain-on-start
     expect(drain(root, addr).map((l) => l.body)).toEqual(['while you were out']);
+  });
+});
+
+describe('inbound refuse', () => {
+  it('refused mail is never consumed, so receipts honestly read queued', async () => {
+    expect(inboundAccepts('refuse')).toBe(false);
+    const root = tmpRoot();
+    const l = letter({ id: 'refuse-0001', ts: Date.now() });
+    deposit(root, 'refuse0000001', l);
+    // index.ts checkInbox early-returns on refuse — drain never runs:
+    if (inboundAccepts('refuse')) drain(root, 'refuse0000001');
+    expect(unreadCount(root, 'refuse0000001')).toBe(1); // preserved, not silently dropped
+    expect(await awaitReceipt(root, 'refuse0000001', l, 300)).toBe('queued');
   });
 });
 
