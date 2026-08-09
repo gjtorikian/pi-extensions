@@ -8,8 +8,8 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { ARTIFACT_RETENTION_MS, sweepRunArtifacts, type RunArtifact } from './subagents.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ARTIFACT_RETENTION_MS, sweepRunArtifacts, writeSessionMirror, type RunArtifact } from './subagents.js';
 import { addWorktree, captureHandoff, findRepoRoot, removeWorktree } from './worktree.js';
 
 const tmpdirs: string[] = [];
@@ -39,6 +39,14 @@ function writeArtifact(root: string, ns: string, record: Partial<RunArtifact> & 
     }),
   );
   return file;
+}
+
+function gitRepo(): string {
+  const repo = tmpRoot();
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  git('init', '-q');
+  git('-c', 'user.email=test@test', '-c', 'user.name=test', 'commit', '-q', '--allow-empty', '-m', 'init');
+  return repo;
 }
 
 describe('sweepRunArtifacts', () => {
@@ -81,6 +89,28 @@ describe('sweepRunArtifacts', () => {
     expect(JSON.parse(fs.readFileSync(ours, 'utf8')).status).toBe('running');
   });
 
+  it("removes a ghost run's worktree when reaping (no leak on hard exit)", () => {
+    const root = tmpRoot();
+    const repo = gitRepo();
+    const added = addWorktree(repo, 'ghost-wt');
+    if (!('path' in added)) throw new Error('setup failed');
+    expect(fs.existsSync(added.path)).toBe(true);
+
+    writeArtifact(root, 'subagents', {
+      runId: 'ghost-wt-run',
+      status: 'running',
+      hostPid: 999999999,
+      worktree: { path: added.path, repoRoot: repo },
+    });
+
+    const result = sweepRunArtifacts(root);
+    expect(result.reaped).toBe(1);
+    expect(fs.existsSync(added.path)).toBe(false);
+    const reaped = JSON.parse(fs.readFileSync(path.join(root, 'subagents', 'ghost-wt-run.json'), 'utf8'));
+    expect(reaped.status).toBe('aborted');
+    expect(reaped.worktree).toBeUndefined();
+  });
+
   it('does not reap records without a hostPid (pre-field artifacts)', () => {
     const root = tmpRoot();
     writeArtifact(root, 'subagents', { runId: 'legacy-run', status: 'running' });
@@ -94,14 +124,6 @@ describe('sweepRunArtifacts', () => {
 });
 
 describe('worktree primitives', () => {
-  function gitRepo(): string {
-    const repo = tmpRoot();
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
-    git('init', '-q');
-    git('-c', 'user.email=test@test', '-c', 'user.name=test', 'commit', '-q', '--allow-empty', '-m', 'init');
-    return repo;
-  }
-
   it('findRepoRoot finds the toplevel and returns null outside a repo', () => {
     const repo = gitRepo();
     expect(findRepoRoot(path.join(repo))).toBe(fs.realpathSync(repo));
@@ -142,5 +164,104 @@ describe('worktree primitives', () => {
     expect(handoff.patchPath).toBeNull();
     expect(handoff.changedFiles).toBe(0);
     removeWorktree(repo, added.path);
+  });
+});
+
+describe('writeSessionMirror', () => {
+  // SessionManager.create writes under <agentDir>/sessions/<encoded-cwd>/;
+  // point PI_CODING_AGENT_DIR at a temp dir so the test never touches the
+  // real ~/.pi/agent.
+  let prevAgentDir: string | undefined;
+  let scratch: string;
+
+  beforeEach(() => {
+    prevAgentDir = process.env.PI_CODING_AGENT_DIR;
+    scratch = tmpRoot();
+    process.env.PI_CODING_AGENT_DIR = scratch;
+  });
+  afterEach(() => {
+    if (prevAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+  });
+
+  it('writes a standard pi session JSONL with parentSession linkage and the child messages', () => {
+    const cwd = tmpRoot();
+    const parent = path.join(scratch, 'parent', 'parent.jsonl');
+    const messages = [
+      { role: 'user', content: 'review the parser', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'looks fine' }],
+        provider: 'anthropic',
+        model: 'claude',
+        usage: {
+          input: 1,
+          output: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 3,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'stop',
+        timestamp: 2,
+      },
+    ];
+
+    const file = writeSessionMirror(messages, cwd, parent);
+    expect(file).toBeDefined();
+    expect(fs.existsSync(file!)).toBe(true);
+
+    const lines = fs
+      .readFileSync(file!, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(lines[0].type).toBe('session');
+    expect(lines[0].version).toBe(3);
+    expect(lines[0].cwd).toBe(cwd);
+    expect(lines[0].parentSession).toBe(parent);
+    expect(lines[1].type).toBe('message');
+    expect(lines[1].message.role).toBe('user');
+    expect(lines[2].message.role).toBe('assistant');
+    expect(lines[2].message.content[0].text).toBe('looks fine');
+  });
+
+  it('writes without parentSession when the owning session is in-memory', () => {
+    const cwd = tmpRoot();
+    const messages = [
+      { role: 'user', content: 'hi', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'hello back' }],
+        provider: 'anthropic',
+        model: 'claude',
+        usage: {
+          input: 1,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'stop',
+        timestamp: 2,
+      },
+    ];
+    const file = writeSessionMirror(messages, cwd, undefined);
+    expect(file).toBeDefined();
+    const header = JSON.parse(fs.readFileSync(file!, 'utf8').trim().split('\n')[0]!);
+    expect(header.parentSession).toBeUndefined();
+  });
+
+  it('returns undefined when the child produced no assistant turn (no file is flushed)', () => {
+    // SessionManager creates the JSONL lazily on the first assistant message;
+    // a child that crashed before responding leaves nothing to inspect.
+    const cwd = tmpRoot();
+    const file = writeSessionMirror([{ role: 'user', content: 'hi', timestamp: 1 }], cwd, undefined);
+    expect(file).toBeUndefined();
+  });
+
+  it('returns undefined when there is nothing to mirror', () => {
+    expect(writeSessionMirror([], tmpRoot(), undefined)).toBeUndefined();
   });
 });

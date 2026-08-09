@@ -117,6 +117,17 @@ export interface SpawnOptions {
    * when cwd is not inside a git repository.
    */
   worktree?: boolean;
+  /**
+   * Owning pi session file path. When set, the run is ALSO persisted as a
+   * standard pi session JSONL via the real `SessionManager` into the default
+   * sessions dir (~/.pi/agent/sessions/<encoded-cwd>/), with `parentSession`
+   * set to this path — so the run is inspectable with pi's native /resume,
+   * /tree, and --fork machinery. The bespoke run store (fleet/registry)
+   * keeps working unchanged; this is an additive dual-write. Omit to disable
+   * the mirror entirely (other shared-runtime consumers that don't pass an
+   * owning session are unaffected).
+   */
+  parentSession?: string;
 }
 
 export interface SpawnUsage {
@@ -175,6 +186,12 @@ export interface RunRecord {
   /** Last N child events (turns/tool calls), bounded. */
   transcript?: TranscriptEntry[] | undefined;
   worktree?: WorktreeInfo | undefined;
+  /**
+   * Path to a standard pi session JSONL mirror of this run, when dual-written
+   * via `SessionManager` (see SpawnOptions.parentSession). Additive to the
+   * bespoke run store — the fleet/registry still read the .json artifact.
+   */
+  sessionFile?: string | undefined;
 }
 
 export interface SubagentRuntime {
@@ -255,6 +272,50 @@ function markFailed(record: RunRecord, result: SpawnFailure): SpawnFailure {
 function childSessionError(session: AgentSession): string | undefined {
   return session.agent.state.errorMessage;
 }
+
+/**
+ * Additive dual-write: mirror a finished child run's messages into a standard
+ * pi session JSONL via the real SessionManager, linked back to the owning
+ * session through `parentSession`. Returns the new session file path, or
+ * undefined when no mirror was written (no messages, or a best-effort
+ * failure). Never throws — the bespoke .json artifact remains the source of
+ * truth for the fleet/registry.
+ *
+ * `parentSession` is the owning pi session's file path
+ * (ctx.sessionManager.getSessionFile() from the dispatch tool). When
+ * undefined (in-memory/print host) the mirror is still written, just without
+ * parent linkage. SessionManager.appendMessage refuses compactionSummary and
+ * branchSummary messages, so those are filtered — a single-prompt child run
+ * should never produce them, but the guard keeps a compacted child from
+ * breaking the mirror.
+ */
+function writeSessionMirror(
+  messages: readonly any[],
+  cwd: string,
+  parentSession: string | undefined,
+): string | undefined {
+  const safe = messages.filter((m) => {
+    const role = m?.role;
+    return (
+      role === 'user' || role === 'assistant' || role === 'toolResult' || role === 'bashExecution' || role === 'custom'
+    );
+  });
+  if (safe.length === 0) return undefined;
+  try {
+    const mgr = SessionManager.create(cwd, undefined, parentSession ? { parentSession } : undefined);
+    for (const msg of safe) mgr.appendMessage(msg);
+    // SessionManager creates the JSONL lazily — only once the first assistant
+    // message is appended (see its _persist 'hasAssistant' gate). A child that
+    // crashed before producing any assistant turn therefore leaves no file on
+    // disk, and getSessionFile() would return a path to nothing. Only report a
+    // sessionFile when the mirror was actually written.
+    const file = mgr.getSessionFile();
+    return file && fs.existsSync(file) ? file : undefined;
+  } catch {
+    return undefined;
+  }
+}
+export { writeSessionMirror };
 
 /** Extract the text of the last assistant message that produced any. */
 function lastAssistantText(messages: readonly any[]): string {
@@ -447,10 +508,17 @@ export function sweepRunArtifacts(
         record.hostPid !== process.pid;
       if (isGhost) {
         try {
+          // A ghost run's host died before runChild could clean up — remove
+          // its worktree now so a hard exit (SIGKILL/crash) can't leak one.
+          // .patch siblings are reaped by the age-based GC below when their
+          // artifact ages out; an aborted run captures no patch, so there is
+          // usually nothing to reap here.
+          if (record.worktree?.path) removeWorktree(record.worktree.repoRoot ?? null, record.worktree.path);
           record.status = 'aborted';
           record.endedAt = now;
           record.error =
             'Host pi process exited while this run was active (in-process children cannot outlive their host).';
+          if (record.worktree?.path) record.worktree = undefined;
           fs.writeFileSync(filePath, JSON.stringify(record, null, 2));
           reaped++;
         } catch {
@@ -784,17 +852,31 @@ export function createSubagentRuntime(options: {
     const usage = sumUsage(messages);
     const stateError = childSessionError(session);
     session.dispose();
-
-    // Worktree handoff: full patch (incl. untracked files) beside the artifact.
-    if (record.worktree && artifactsDir) {
-      try {
-        const dir = path.join(artifactsDir, namespace);
-        fs.mkdirSync(dir, { recursive: true });
-        const handoff = captureHandoff(record.worktree.path, path.join(dir, `${runId}.patch`));
-        if (handoff.patchPath) record.worktree.patchPath = handoff.patchPath;
-        record.worktree.changedFiles = handoff.changedFiles;
-      } catch {
-        // handoff capture is best-effort; the worktree path on the record is the fallback
+    // Worktree handoff/cleanup policy:
+    // - A run that did NOT abort (completed/failed/empty/schema_invalid)
+    //   captures its full patch (incl. untracked files) beside the artifact;
+    //   the worktree itself is kept on disk for the 7-day inspection window
+    //   and removed by sweepRunArtifacts alongside the aged-out artifact.
+    // - An aborted run (signal/cancel/host-shutdown) never captures a patch:
+    //   the child did not complete, so its partial tree is not a reliable
+    //   handoff. Its worktree is removed immediately so an interrupt or
+    //   parent exit can never leak a detached worktree. The worktree path is
+    //   dropped from the record so /fleet never advertises a path that no
+    //   longer exists.
+    if (record.worktree) {
+      if (abortReason !== undefined) {
+        removeWorktree(record.worktree.repoRoot ?? null, record.worktree.path);
+        record.worktree = undefined;
+      } else if (artifactsDir) {
+        try {
+          const dir = path.join(artifactsDir, namespace);
+          fs.mkdirSync(dir, { recursive: true });
+          const handoff = captureHandoff(record.worktree.path, path.join(dir, `${runId}.patch`));
+          if (handoff.patchPath) record.worktree.patchPath = handoff.patchPath;
+          record.worktree.changedFiles = handoff.changedFiles;
+        } catch {
+          // handoff capture is best-effort; the worktree path on the record is the fallback
+        }
       }
     }
 
@@ -802,6 +884,15 @@ export function createSubagentRuntime(options: {
     record.endedAt = Date.now();
     record.usage = usage;
     if (transcript.length > 0) record.transcript = [...transcript];
+
+    // Additive dual-write: mirror the run into a standard pi session JSONL via
+    // the real SessionManager, with parentSession linked to the owning session.
+    // This is independent of the bespoke .json artifact above (which the
+    // fleet/registry still read); failures here must never fail the run.
+    // Opt-in via SpawnOptions.parentSession so other shared-runtime consumers
+    // (codemode/workflow) that don't pass an owning session are unaffected.
+    record.sessionFile =
+      opts.parentSession !== undefined ? writeSessionMirror(messages, cwd, opts.parentSession) : undefined;
 
     const finish = (result: SpawnResult): SpawnResult => {
       if (result.ok) {
