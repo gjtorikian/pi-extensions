@@ -6,8 +6,12 @@ Architecture follows [shift-labs/pi-peer](https://github.com/shift-labs-ai/pi-pe
 
 ## What it adds
 
-- **`relay` tool** — actions: `list`, `list-cwd`, `send`, `ask`, `reply`, `pending`, `cancel`, `status`
-- **`/relay` command** — prints the session listing
+- **`relay` tool** — actions: `list`, `list-cwd`, `send`, `ask`, `reply`, `pending`, `cancel`, `status`, `claim`, `watch`
+- **`/relay` command** — prints the session listing; `/relay log [N]` prints the last N audit entries (default 50)
+
+## Audit log
+
+Every deposit and every delivery appends one line-delimited JSON record to `<PI_RELAY_DIR>/audit.log` — written from the transport choke points so draining a letter as a receipt no longer destroys the evidence that it existed. Each line records the timestamp, the event (`deposit`/`deliver`), the letter kind, the from/to addresses, and the message id. **The full body is never logged** — only a short (≤80 char) whitespace-collapsed preview. The file is `0600`, append-only, and survives corrupt lines (skipped on parse). Read it with `/relay log [N]`.
 
 ## Usage
 
@@ -45,7 +49,25 @@ main moved; rebase before you push.
 
 ### ask / reply / pending / cancel
 
-`ask` deposits a question and blocks (default 120s, `timeoutMs` to change) until the peer's `reply` (with the ask id) arrives — or a `cancel`, timeout, or abort. Received asks wait in `pending`; answer them via `reply` with `replyTo` so correlation works. `cancel { messageId }` withdraws one of your outstanding asks. If a reply arrives after its asker gave up, it lands as an ordinary message.
+`ask` deposits a question and blocks (default 120s, `timeoutMs` to change) until the peer's `reply` (with the ask id) arrives — or a `cancel`, a timeout, or an abort. Received asks wait in `pending`; answer them via `reply` with `replyTo` so correlation works. `cancel { messageId }` withdraws one of your outstanding asks. If a reply arrives after its asker gave up, it lands as an ordinary message.
+
+**Explicit thread tokens.** Every `send`/`ask` returns a message id (`id …` in the delivery card and the tool result). `reply` **requires** `replyTo` (the ask/message id or a unique prefix) — correlation is explicit. The previous behavior of inferring a single pending ask when `replyTo` was omitted is gone: identical calls no longer silently change semantics based on invisible broker state.
+
+### Durable claimable aliases
+
+`claim { to: "@ci" }` binds a human-readable `@alias` to this session's address. Aliases are **durable** (persisted in the registry, not runtime-only) and survive `pi -c` restart; **last-claim-wins** (a new claim overwrites any prior owner); and **swept when the owning session dies** — specifically, when sweep reaps the owning session's record (a resumable-but-offline session keeps both its record and its alias, so mail stays deliverable while it's down). Target an alias from any session with `to: "@ci"`. Names match `^[a-z0-9][a-z0-9_-]{0,31}$` (1-32 chars, leading alphanumeric). Aliases this session owns surface in `status`.
+
+### Broadcast
+
+`send` with `to: "*"` delivers to every other registered session; `to: "cwd"` delivers to sessions in this session's cwd. A broadcast is **N atomic deposits through the existing deposit path** — the rate cap (`RATE_LIMIT_MAX`/30s) bounds total fan-out, and dedupe is **per-peer** (loop-breaking stays per-peer, so one body reaches distinct peers rather than being dropped after the first). Each delivery gets its own audit line and its own receipt verdict; peers that refused (rate/backlog/size) are listed in the result. `ask` cannot broadcast — it is 1:1.
+
+### Presence watch
+
+`watch { to: "…" }` subscribes this session to a peer's presence transitions. A 5s poller (unref'd) compares each watched peer's presence to the last observed value and, on any change (`offline`→`idle`/`working`, `idle`↔`working`, etc.), surfaces a `relay:notify` system message. The peer need not be watched back; notifications arrive as ordinary custom messages and do not wake a busy agent (`triggerTurn: false`).
+
+## Deferred (not an extension concern)
+
+A standalone `pi relay` CLI (inspect mailboxes, tail the audit log, claim/release aliases from the shell) is a core-runtime concern, not this extension's surface — it is intentionally deferred here.
 
 ## Configuration
 
