@@ -7,6 +7,10 @@ First-party subagent dispatch and fleet for pi — fan out parallel child agents
 - **`dispatch` tool** (model-facing) — fan out up to 8 child agents in parallel. Each task gets its own prompt, optional label/model/system-prompt, and a tool allowlist (default read-only: `read`, `grep`, `find`, `ls`). Typed per-task results aggregate into one tool result. `background: true` runs detached and surfaces completion via a transcript message. Tasks whose allowlist includes `edit`, `write`, or `bash` mutate the shared working tree: they must declare `allowTreeMutation: true` (otherwise that task is refused) and always run **sequentially**, one at a time, after the parallel read-only batch completes — never concurrently with each other or the read-only batch.
 - **`fleet` tool** (model-facing) — `list` recent runs (live + persisted, across extensions using the shared runtime) or fetch a `result` by runId. This is how the model checks on background dispatches.
 - **`/fleet` command** — user-facing run table.
+- **Fleet radar overlay + statusline** — `Alt+Ctrl+F` (rebind via `~/.pi/agent/keybindings.json`) opens a tmux-choose-tree-style overlay listing every run as a per-child lane: status, model, current tool, token burn, last activity. `Enter` inspects the live run transcript; `c` cancels the focused run (wired into the cascading-cancellation registry); `Esc` closes. While any run is in flight, an ambient footer segment (`ctx.ui.setStatus`) shows live `working · done · failed` counts.
+- **`/patches` command** — staging area for worktree-subagent `.patch` handoffs. Opens a keyboard-driven overlay over every pending patch with diffstat and a pre-flight stamp (`clean` / `conflicts` / `stale`, checked via `git apply --check` **without** applying). `Enter` applies the whole patch (`git apply --3way`); `e` expands the full diff with per-hunk navigation (`n`/`p`); `s` applies the focused hunk; `d` discards. Apply/discard decisions persist to `~/.pi/agent/subagent-patches/state.json` so `/patches` survives restart.
+- **`&` dispatch prefix** — `&scout how does auth work` at position zero dispatches a single subagent inline (reusing the same spawn/cancel path as the `dispatch` tool). Live progress shows in a widget above the editor; the final result lands as a collapsible `subagents:inline` transcript block rendered with the same vocabulary as a dispatch tool result, and the answer reaches the model's context. Each dispatch is captured as a session custom entry so it survives restart.
+- **`/again [amendment]` command** — re-fires the last `&` dispatch verbatim, or with the amendment appended.
 
 ## Usage
 
@@ -30,6 +34,23 @@ or directly:
 /fleet
 ```
 
+### Inline `&` dispatch
+
+Prefix a prompt with `&` to dispatch a single subagent inline — the run reuses the same spawn/cancel path as the `dispatch` tool, but is driven from the editor instead of the model:
+
+```text
+&scout how does auth work
+```
+
+Live progress shows in a widget above the editor; when the child settles, the result lands in the transcript as a collapsible block (same vocabulary as a `dispatch` tool result) and the answer is added to the model's context. The dispatch is recorded as a session entry, so `/again` can re-fire it:
+
+```text
+/again
+/again focus only on the JWT path
+```
+
+`/again` re-fires the last `&` dispatch verbatim, or with an amendment appended. Cancellation: an inline run is registered in the cascading-cancellation registry, so it is aborted on session shutdown and can be cancelled mid-flight from the fleet radar (`Alt+Ctrl+F` → `c`) or the `fleet` tool — it is **not** aborted by a bare Esc (the `input` event fires while idle, so no agent abort signal is available to thread in).
+
 ### Worktree isolation
 
 Builder tasks should prefer `worktree: true` over `allowTreeMutation: true`:
@@ -47,6 +68,18 @@ Builder tasks should prefer `worktree: true` over `allowTreeMutation: true`:
 ```
 
 The child runs in a detached worktree at `~/.pi/agent/subagent-worktrees/<runId>` from current `HEAD`. Its writes never touch your working tree, mutating tools stay **parallel** (no `allowTreeMutation`, no serialization), and on completion the full change set — **including new untracked files** — is captured as an untruncated patch at `~/.pi/agent/subagent-runs/subagents/<runId>.patch`. Integration is your call (the central-integrator pattern): inspect the patch, `git apply` what you want. `fleet` `action: 'result'` shows the worktree path, patch path, and changed-file count. Fails fast if the cwd isn't a git repo.
+
+#### `/patches` staging area
+
+Instead of hunting for `.patch` files by hand, run `/patches`. It scans every completed worktree run's patch alongside its run artifact, pre-flights each one **without applying** (`git apply --check`), and stamps it:
+
+- `clean` — applies cleanly to the current tree.
+- `conflicts` — `--check` fails; the context no longer matches (inspect before applying).
+- `stale` — a modified (non-created) target file no longer exists in the working tree.
+
+Keys in the overlay: `↑↓` select, `Enter` applies the whole patch (`git apply --3way`), `e` expands the full diff with per-hunk navigation, `s` applies the focused hunk, `d` discards, `Esc` closes. Apply/discard decisions persist to `~/.pi/agent/subagent-patches/state.json`, so already-applied or discarded patches don't re-appear after restart.
+
+Cuts (honest): `s` applies a **single focused hunk** (reconstructed as a sub-patch with its file header and `git apply --3way`-ed); multi-hunk selection is not implemented. The full-diff view is capped at 2000 lines (truncated with a marker) so an enormous patch can't swamp the overlay. The pre-flight stamp is a heuristic: `stale` vs `conflicts` is decided by whether a modified target file still exists, not by a true base-commit comparison (the run record doesn't store the base commit).
 
 #### Worktree cleanup policy
 
