@@ -11,9 +11,16 @@ import {
   isSafeSlug,
   writeArtifact,
   artifactExists,
+  readArtifact,
   listArtifacts,
   openInBrowser,
   artifactPath,
+  artifactDir,
+  copyToClipboard,
+  revealFile,
+  createGist,
+  screenshotUrl,
+  copyImageToClipboard,
 } from './utils.js';
 import { renderMarkdownDocument, renderHtmlDocument } from './templates.js';
 
@@ -78,10 +85,34 @@ export default function artifacts(pi: ExtensionAPI) {
     promptSnippet:
       'Emit visual output (reports, diagrams, rendered diffs, tables) as a browser HTML artifact instead of terminal text',
     parameters: Type.Object({
-      action: Type.Union([Type.Literal('create'), Type.Literal('update'), Type.Literal('open'), Type.Literal('list')], {
-        description:
-          'create: write new artifact. update: overwrite existing (or create if missing) + live-reload open tabs. open: start server + open in browser. list: list artifacts (no server start).',
-      }),
+      action: Type.Union(
+        [
+          Type.Literal('create'),
+          Type.Literal('update'),
+          Type.Literal('open'),
+          Type.Literal('list'),
+          Type.Literal('share'),
+        ],
+        {
+          description:
+            'create: write new artifact. update: overwrite existing (or create if missing) + live-reload open tabs. open: start server + open in browser. list: list artifacts (no server start). share: hand the artifact file off — clipboard, file manager, or a GitHub gist (gist only when the user asks for an upload; it shows the source, not a rendered page).',
+        },
+      ),
+      method: Type.Optional(
+        Type.Union([Type.Literal('clipboard'), Type.Literal('reveal'), Type.Literal('gist'), Type.Literal('image')], {
+          description:
+            "share only. clipboard (default): copy the self-contained HTML. reveal: show the file in the OS file manager. gist: `gh gist create` (requires gh CLI + auth) — uploads under the user's GitHub account, copies the URL, opens it. image: screenshot the rendered artifact to <slug>.png via a headless Chrome-family browser (copies the PNG to the clipboard on macOS).",
+        }),
+      ),
+      width: Type.Optional(
+        Type.Integer({ description: 'share method=image only. Viewport width in px. Default: 1280.', minimum: 200 }),
+      ),
+      height: Type.Optional(
+        Type.Integer({ description: 'share method=image only. Viewport height in px. Default: 800.', minimum: 200 }),
+      ),
+      public: Type.Optional(
+        Type.Boolean({ description: 'share method=gist only. Make the gist public. Default: false (secret gist).' }),
+      ),
       title: Type.Optional(
         Type.String({
           description: 'Artifact title; slug is derived from it. Required for create/update/open.',
@@ -160,6 +191,69 @@ export default function artifacts(pi: ExtensionAPI) {
           content: [{ type: 'text' as const, text: `Opened ${title}\n${url}\n${absPath}` }],
           details: details as unknown as Record<string, unknown>,
         };
+      }
+
+      // ── share ──────────────────────────────────────────────────────────────
+      if (action === 'share') {
+        if (!artifactExists(slug)) {
+          return errResult(`no artifact with slug "${slug}" — create it first.`, { slug, title });
+        }
+        const method = params.method ?? 'clipboard';
+        try {
+          if (method === 'clipboard') {
+            const html = readArtifact(slug)!;
+            await copyToClipboard(html);
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Copied ${title} to the clipboard (${Math.round(html.length / 1024)} KB of self-contained HTML).\n${absPath}`,
+                },
+              ],
+              details: { action, slug, title, method, absPath } as Record<string, unknown>,
+            };
+          }
+          if (method === 'reveal') {
+            revealFile(absPath);
+            return {
+              content: [{ type: 'text' as const, text: `Revealed in the file manager:\n${absPath}` }],
+              details: { action, slug, title, method, absPath } as Record<string, unknown>,
+            };
+          }
+          if (method === 'image') {
+            const url = await artifactUrl(slug); // starts the lazy server the browser will hit
+            const pngPath = join(artifactDir(), `${slug}.png`);
+            await screenshotUrl(url, pngPath, params.width ?? 1280, params.height ?? 800);
+            const copied = await copyImageToClipboard(pngPath);
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Rendered ${title} to an image (${params.width ?? 1280}×${params.height ?? 800}):\n${pngPath}${copied ? '\nCopied to the clipboard as an image — paste it anywhere.' : ''}`,
+                },
+              ],
+              details: { action, slug, title, method, absPath: pngPath, imageCopied: copied } as Record<
+                string,
+                unknown
+              >,
+            };
+          }
+          // gist
+          const url = await createGist(absPath, title, params.public ?? false);
+          await copyToClipboard(url).catch(() => {}); // clipboard is a nicety, never the failure mode
+          openInBrowser(url);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Gist created (${params.public ? 'public' : 'secret'}), URL copied to clipboard:\n${url}\n\nNote: gist.github.com shows the source. Share the file itself for the rendered page.`,
+              },
+            ],
+            details: { action, slug, title, method, url, absPath } as Record<string, unknown>,
+          };
+        } catch (e) {
+          return errResult(`share (${method}) failed: ${e instanceof Error ? e.message : String(e)}`, { slug, title });
+        }
       }
 
       // ── create / update — need kind + content ──────────────────────────────

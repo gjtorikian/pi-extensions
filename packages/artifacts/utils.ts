@@ -1,7 +1,7 @@
 /** Pure helpers: slugify, artifact file I/O, browser open. */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, normalize, sep } from 'node:path';
+import { dirname, join, normalize, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 
 import { ARTIFACT_DIR } from './config.js';
@@ -135,4 +135,101 @@ export function openInBrowser(url: string): void {
   spawn(cmd, args, { detached: true, stdio: 'ignore' })
     .on('error', (err) => console.warn(`openInBrowser: ${cmd} failed: ${err.message}`))
     .unref();
+}
+
+/** Run a command, resolve with trimmed stdout. Rejects with stderr (or spawn error) on failure. */
+function run(cmd: string, args: string[], input?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args);
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => reject(new Error(`${cmd} is not available: ${e.message}`)));
+    child.on('close', (code) =>
+      code === 0 ? resolve(out.trim()) : reject(new Error(err.trim() || `${cmd} exited with code ${code}`)),
+    );
+    if (input != null) child.stdin.write(input);
+    child.stdin.end();
+  });
+}
+
+/** Copy text to the system clipboard (pbcopy / clip / wl-copy). */
+export async function copyToClipboard(text: string): Promise<void> {
+  const [cmd, args] =
+    process.platform === 'darwin'
+      ? (['pbcopy', []] as const)
+      : process.platform === 'win32'
+        ? (['clip', []] as const)
+        : (['wl-copy', []] as const);
+  await run(cmd, [...args], text);
+}
+
+/** Reveal a file in the OS file manager (Finder / Explorer / xdg-open on its directory). */
+export function revealFile(absPath: string): void {
+  const [cmd, args] =
+    process.platform === 'darwin'
+      ? ['open', ['-R', absPath]]
+      : process.platform === 'win32'
+        ? ['explorer', [`/select,${absPath}`]]
+        : ['xdg-open', [dirname(absPath)]];
+  spawn(cmd, args, { detached: true, stdio: 'ignore' })
+    .on('error', (err) => console.warn(`revealFile: ${cmd} failed: ${err.message}`))
+    .unref();
+}
+
+/** Upload an artifact file as a GitHub gist via the gh CLI. Returns the gist URL. */
+export async function createGist(absPath: string, title: string, isPublic: boolean): Promise<string> {
+  const args = ['gist', 'create', absPath, '--desc', title];
+  if (isPublic) args.push('--public');
+  return run('gh', args);
+}
+
+/** Locate a headless-capable browser binary. darwin: known app paths; elsewhere: PATH names. */
+function findBrowser(): string | null {
+  if (process.platform === 'darwin') {
+    for (const p of [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    ]) {
+      if (existsSync(p)) return p;
+    }
+    return null;
+  }
+  // linux/win: rely on PATH; spawn errors surface as a clear message from run()
+  return 'google-chrome';
+}
+
+/**
+ * Screenshot a URL to a PNG via headless Chrome-family flags.
+ * The artifact server must already be running (the caller ensures it).
+ */
+export async function screenshotUrl(url: string, outPath: string, width: number, height: number): Promise<void> {
+  const browser = findBrowser();
+  if (!browser) {
+    throw new Error(
+      'no Chrome-family browser found (looked in /Applications). Install Chrome or Chromium to render images.',
+    );
+  }
+  await run(browser, [
+    '--headless',
+    '--disable-gpu',
+    '--hide-scrollbars',
+    `--window-size=${width},${height}`,
+    `--screenshot=${outPath}`,
+    url,
+  ]);
+  if (!existsSync(outPath)) throw new Error('the browser exited without writing a screenshot.');
+}
+
+/** Copy a PNG file to the clipboard as an image (macOS only). Returns false on other platforms or failure. */
+export async function copyImageToClipboard(absPath: string): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  try {
+    await run('osascript', ['-e', `set the clipboard to (read (POSIX file "${absPath}") as «class PNGf»)`]);
+    return true;
+  } catch {
+    return false;
+  }
 }
