@@ -212,7 +212,9 @@ export function discoverProfiles(dirs: ProfileDir[]): DiscoveredProfiles {
     } catch {
       continue; // dir absent — normal
     }
-    for (const entry of entries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.md')).sort()) {
+    for (const entry of entries
+      .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.md'))
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const filePath = path.join(dir, entry.name);
       let content: string;
       try {
