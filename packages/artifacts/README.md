@@ -15,30 +15,33 @@ pi install /Users/nicknisi/Developer/pi-extensions/packages/artifacts
 - **Tool `artifact`** — action-based (`create` | `update` | `open` | `list` | `share`). Registered with a `promptSnippet` ("emit visual output as a browser HTML artifact instead of terminal text") so the model knows when to reach for it.
 - **Command `/artifacts`** — starts the lazy server and opens the index page (`/`) in the browser.
 - **Event hook** — `session_shutdown`: stops the HTTP server.
-- **Browser UI** — styled artifact pages plus an index page at `/`; live reload via an `/events` SSE endpoint. No TUI widgets, overlays, keybindings, or custom message/entry types: tool results use pi's default rendering (the tool returns structured `details` — `action`, `slug`, `title`, `kind`, `url`, `absPath` — and a text summary containing the clickable localhost URL).
+- **Browser UI** — styled artifact pages plus an index page at `/`; live reload via an `/events` SSE endpoint. Every served artifact page carries a **Share** button (bottom-right): _Copy image_ renders a PNG with the comments panel open (when comments exist), _Copy PDF_ prints to a selectable-text PDF with a Review comments section, _Copy file_ puts the self-contained HTML on your clipboard (comments baked in), _Create gist link_ uploads via `gh` and copies the URL — no agent round-trip needed. No TUI widgets, overlays, keybindings, or custom message/entry types: tool results use pi's default rendering (the tool returns structured `details` — `action`, `slug`, `title`, `kind`, `url`, `absPath` — and a text summary containing the clickable localhost URL).
+- **Annotation layer** — every served artifact page carries an inert comment layer (see [Annotations](#annotations)): select text, comment, and send the comments back to the running agent as a follow-up message.
 
 ## The `artifact` tool
 
 Parameters (TypeBox schema):
 
-| Param              | Type / values                                       | Default                               | Notes                                                                                             |
-| ------------------ | --------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `action`           | `create` \| `update` \| `open` \| `list` \| `share` | required                              | `update` on a missing slug creates it                                                             |
-| `title`            | string                                              | required for create/update/open/share | slug derived from it (kebab-case, max 80 chars)                                                   |
-| `method`           | `clipboard` \| `reveal` \| `gist` \| `image`        | `clipboard` (share only)              | how to hand off the artifact: clipboard copy, file-manager reveal, GitHub gist, or PNG screenshot |
-| `public`           | boolean                                             | `false` (share method=gist only)      | make the gist public; default is a secret gist                                                    |
-| `width` / `height` | integer                                             | `1280` / `800` (method=image only)    | viewport size for the screenshot; it becomes the image size                                       |
-| `kind`             | `markdown` \| `html`                                | required for create/update            | never auto-detected from content                                                                  |
-| `content`          | string                                              | —                                     | inline markdown or HTML                                                                           |
-| `path`             | string                                              | —                                     | alternative to `content`: read file relative to cwd (2 MB cap; `kind` still required)             |
-| `open`             | boolean                                             | `true` on create, `false` on update   | auto-open in browser after write                                                                  |
+| Param              | Type / values                                         | Default                               | Notes                                                                                                        |
+| ------------------ | ----------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `action`           | `create` \| `update` \| `open` \| `list` \| `share`   | required                              | `update` on a missing slug creates it                                                                        |
+| `title`            | string                                                | required for create/update/open/share | slug derived from it (kebab-case, max 80 chars)                                                              |
+| `method`           | `clipboard` \| `reveal` \| `gist` \| `image` \| `pdf` | `clipboard` (share only)              | how to hand off the artifact: clipboard copy, file-manager reveal, GitHub gist, PNG screenshot, or PDF print |
+| `public`           | boolean                                               | `false` (share method=gist only)      | make the gist public; default is a secret gist                                                               |
+| `width` / `height` | integer                                               | `1280` / `800` (method=image only)    | viewport size for the screenshot; it becomes the image size                                                  |
+| `kind`             | `markdown` \| `html`                                  | required for create/update            | never auto-detected from content                                                                             |
+| `content`          | string                                                | —                                     | inline markdown or HTML                                                                                      |
+| `path`             | string                                                | —                                     | alternative to `content`: read file relative to cwd (2 MB cap; `kind` still required)                        |
+| `open`             | boolean                                               | `true` on create, `false` on update   | auto-open in browser after write                                                                             |
 
 Behavior per action:
 
 - `create` / `update` — write `<slug>.html` and return slug + localhost URL + absolute path. `update` pushes an SSE reload event to connected browser tabs, so iterating on a report reuses one file and one tab. If `open` is false and the server isn't running, no URL is returned (`(server not running — use action: open to view)`).
 - `open` — starts the server (if needed) and opens the artifact in the browser. Errors if the slug doesn't exist.
 - `list` — lists artifacts newest-first (title, kind, timestamp, slug, absolute path). Does **not** start the server; URLs are included only if the server is already running.
-- `share` — hands the artifact file off, since every artifact is already one self-contained HTML file. `clipboard` (default) copies the rendered HTML (pbcopy / clip / wl-copy); `reveal` shows the file in the OS file manager (Finder via `open -R`), ready to AirDrop or drag into Slack; `gist` runs `gh gist create` under the user's GitHub account (requires the `gh` CLI, authed), copies the URL to the clipboard, and opens it — secret unless `public: true`. Gists display as source, not a rendered page, so `gist` is for durable attributable upload, not for showing someone the rendered report. `image` starts the server (if needed), screenshots the rendered page with a headless Chrome-family browser (`--headless --screenshot`, discovered in /Applications on macOS or `google-chrome` on PATH elsewhere), and writes `<slug>.png` next to the artifact — on macOS the PNG is also placed on the clipboard as an image, ready to paste into Slack or docs. For share cards, author a full-bleed full-document `html` artifact so the card fills the viewport.
+- `share` — hands the artifact file off, since every artifact is already one self-contained HTML file. `clipboard` (default) copies the rendered HTML (pbcopy / clip / wl-copy); `reveal` shows the file in the OS file manager (Finder via `open -R`), ready to AirDrop or drag into Slack; `gist` runs `gh gist create` under the user's GitHub account (requires the `gh` CLI, authed), copies the URL to the clipboard, and opens it — secret unless `public: true`. Gists display as source, not a rendered page, so `gist` is for durable attributable upload, not for showing someone the rendered report. `image` starts the server (if needed), screenshots the rendered page with a headless Chrome-family browser (`--headless --screenshot`, discovered in /Applications on macOS or `google-chrome` on PATH elsewhere), and writes `<slug>.png` next to the artifact — on macOS the PNG is also placed on the clipboard as an image, ready to paste into Slack or docs. `pdf` does the same with `--print-to-pdf`, writing `<slug>.pdf` and copying the file reference on macOS. When the artifact has comments, image renders with the comments panel open and PDF with a Review comments section appended (via the serve-time URL modes `?panel=open` / `?print=1`; `annotations: false` opts out). For share cards, author a full-bleed full-document `html` artifact so the card fills the viewport.
+
+  **Comments ride along**: when the artifact has annotation comments, `clipboard` and `gist` bake them into the shared file — highlights painted on the text plus a read-only comments panel behind an "N comments" pill (the layer's static mode; nothing can be edited or submitted from a shared file). Pass `annotations: false` to share the clean file. `reveal` and `image` are unchanged — `image` incidentally captures highlights, since the served page hydrates them.
 
 Example tool call (as the model would emit it):
 
@@ -73,7 +76,9 @@ Kind is never auto-detected from content — markdown legitimately opens with in
 Project-local, mirroring plan-mode's `.pi/plans` convention:
 
 ```
-<project>/.pi/artifacts/<slug>.html
+<project>/.pi/artifacts/<slug>.html            # the artifact
+<project>/.pi/artifacts/<slug>.md              # markdown source mirror (markdown kind only; enables source-line refs)
+<project>/.pi/artifacts/<slug>.annotations.json # comment drafts (written by the annotation layer)
 ```
 
 - Slug = identity: derived from the title (lowercase, alnum + hyphens, trimmed, 80-char cap; empty result → `artifact`). Slugs are validated against path traversal (`/`, `\`, `..` rejected). `update` with the same slug overwrites the file — collisions are intentional.
@@ -84,10 +89,40 @@ Project-local, mirroring plan-mode's `.pi/plans` convention:
 ## Server (lazy, localhost-only)
 
 - `node:http` server started on first `open`/auto-open (not at extension load), bound strictly to `127.0.0.1`, random free port (`listen(0)`) remembered for the process lifetime. One server per pi process, matching the cwd-relative storage model.
-- Routes: `/` (index page), `/<slug>.html` (static artifact files), `/events` (SSE endpoint).
+- Routes: `/` (index page), `/<slug>.html` (static artifact files, annotation layer injected at serve time), `/events` (SSE endpoint), `PUT /api/annotations` (draft persistence), `POST /api/feedback` (compose + deliver to the agent), `POST /api/render` (comment markdown preview), `POST /api/share` (the in-page Share button; copy or gist).
 - **SSE live reload**: server and tool run in the same process, so `update` pushes a `reload` event directly to connected clients (no `fs.watch`). Every rendered page embeds a snippet that subscribes to `/events` and reloads only on events matching its own slug (or `*`).
 - **Index page** at `/`: artifact list newest-first with kind badge and timestamp. Titles/kind/mtime recovered by regex-parsing each file's `<title>` and `artifact-*` metas — no sidecar manifest.
 - Request paths are URL-decoded, normalized, and prefix-checked against the artifacts dir — nothing outside it is served. No auth: localhost-only, serving files the agent just wrote locally.
+
+## Annotations
+
+Every artifact page served by the localhost server carries an inert annotation layer — injected at serve time, so the stored `.html` (and anything read from it: gist uploads, clipboard shares) stays byte-clean. The only always-visible element is a small **Annotate** button in the bottom-right corner.
+
+**Commenting**: click Annotate (or it shows a badge with the existing count), select any text in the page, and add a comment in the popover. Comments appear as in-page highlights (via the CSS Custom Highlight API — browsers without it simply skip the highlights) and in the side panel, where each can be edited or deleted. `Esc` exits annotate mode.
+
+**Drafts persist**: every add/edit/delete saves the full list to `<slug>.annotations.json` next to the artifact, so comments survive live reloads and server restarts. If an `update` removes a quoted passage, that comment is marked **stale** (badge in the panel) rather than dropped — the server re-checks every quote against the current artifact text at submit time.
+
+**Submitting**: "Send to the agent" posts the artifact's slug; the server composes one markdown message and delivers it to the running pi session as a follow-up user message (`pi.sendUserMessage(..., { deliverAs: 'followUp' })`), then deletes the sidecar (delivered = consumed). What the agent receives:
+
+```markdown
+# Artifact Annotations
+
+Artifact: sprint-report (http://127.0.0.1:PORT/sprint-report.html)
+
+1. > "Deploys rose 40% after the migration" (source line 5)
+
+   Which migration? Cite the PR.
+
+2. [stale] > "No incidents were recorded"
+
+   Wrong — link the Feb outage retro.
+
+(2 comments · 1 stale)
+```
+
+`(source line N)` appears for markdown artifacts when the quote is found verbatim in the source mirror (`.md`); it is omitted for raw HTML artifacts and quotes that span markdown formatting. If delivery fails, nothing is lost: when the server is up but has no live session to deliver to, it answers 503 with the composed message in the response and the page offers a Copy button; when the server itself is gone (e.g. `/new` stopped it), the draft comments stay in the sidecar and can be submitted after the next `open`.
+
+**Threat model**: same as the server itself — loopback-only (`127.0.0.1`), no auth. The write endpoints add slug validation (the same path-traversal guard used for serving) and a 1 MB request-body cap. The annotation script is injected into raw-HTML artifacts too, so it is built to tolerate arbitrary agent-authored DOM (fixed-position UI + CSS Highlight ranges; no mutation of page content). Note any local page can POST these endpoints: worst case is an uninvited _secret_ gist of an artifact (created under your account, visible to you) or feedback delivered to the agent — annoying, not destructive.
 
 ## `/artifacts` command
 
@@ -141,7 +176,7 @@ Runtime npm deps (declared in `package.json`):
 - `highlight.js` — server-side syntax highlighting baked into the HTML.
 - `typebox` — tool parameter schema.
 
-Peer deps: `@earendil-works/pi-coding-agent` (provides `ExtensionAPI` — only `pi.registerTool`, `pi.registerCommand`, and `pi.on` are used), `@earendil-works/pi-tui`, `typebox`. No `@nicknisi/pi-shared` or other workspace deps. One CDN script (mermaid 11) for mermaid fences only.
+Peer deps: `@earendil-works/pi-coding-agent` (provides `ExtensionAPI` — only `pi.registerTool`, `pi.registerCommand`, and `pi.on` are used), `@earendil-works/pi-tui`, `typebox`. No `@nicknisi/pi-shared` or other workspace deps. One CDN script (mermaid 11) for mermaid fences only. A Chrome-family browser binary is needed for `image`/`pdf` shares (and nothing else).
 
 ## Caveats
 

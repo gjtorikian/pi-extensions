@@ -5,22 +5,20 @@ import { Type } from 'typebox';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { artifactUrl, isRunning, notifyReload, runningPort, stopServer } from './server.js';
+import { shareBaked } from './feedback.js';
+
+import { artifactUrl, isRunning, notifyReload, runningPort, setFeedbackSender, stopServer } from './server.js';
+import type { FeedbackSender } from './server.js';
 import {
   slugify,
   isSafeSlug,
   writeArtifact,
+  writeSourceMirror,
   artifactExists,
-  readArtifact,
   listArtifacts,
   openInBrowser,
   artifactPath,
-  artifactDir,
-  copyToClipboard,
   revealFile,
-  createGist,
-  screenshotUrl,
-  copyImageToClipboard,
 } from './utils.js';
 import { renderMarkdownDocument, renderHtmlDocument } from './templates.js';
 
@@ -63,7 +61,16 @@ function resolveContent(params: { content?: string; path?: string }): { content:
 }
 
 export default function artifacts(pi: ExtensionAPI) {
+  // Deliver composed feedback to the live session as a follow-up message.
+  const sender: FeedbackSender = (markdown) => {
+    pi.sendUserMessage(markdown, { deliverAs: 'followUp' });
+    return true;
+  };
+  setFeedbackSender(sender); // factory time — first session
+  pi.on('session_start', () => setFeedbackSender(sender)); // re-register across session replacement
+
   pi.on('session_shutdown', () => {
+    setFeedbackSender(null);
     stopServer();
   });
 
@@ -95,14 +102,23 @@ export default function artifacts(pi: ExtensionAPI) {
         ],
         {
           description:
-            'create: write new artifact. update: overwrite existing (or create if missing) + live-reload open tabs. open: start server + open in browser. list: list artifacts (no server start). share: hand the artifact file off — clipboard, file manager, or a GitHub gist (gist only when the user asks for an upload; it shows the source, not a rendered page).',
+            'create: write new artifact. update: overwrite existing (or create if missing) + live-reload open tabs. open: start server + open in browser. list: list artifacts (no server start). share: hand the artifact file off — clipboard, file manager, or a GitHub gist (gist only when the user asks for an upload; it shows the source, not a rendered page). When the artifact has annotation comments, clipboard and gist bake them in (highlights + read-only panel) unless annotations: false.',
         },
       ),
       method: Type.Optional(
-        Type.Union([Type.Literal('clipboard'), Type.Literal('reveal'), Type.Literal('gist'), Type.Literal('image')], {
-          description:
-            "share only. clipboard (default): copy the self-contained HTML. reveal: show the file in the OS file manager. gist: `gh gist create` (requires gh CLI + auth) — uploads under the user's GitHub account, copies the URL, opens it. image: screenshot the rendered artifact to <slug>.png via a headless Chrome-family browser (copies the PNG to the clipboard on macOS).",
-        }),
+        Type.Union(
+          [
+            Type.Literal('clipboard'),
+            Type.Literal('reveal'),
+            Type.Literal('gist'),
+            Type.Literal('image'),
+            Type.Literal('pdf'),
+          ],
+          {
+            description:
+              "share only. clipboard (default): copy the self-contained HTML. reveal: show the file in the OS file manager. gist: `gh gist create` (requires gh CLI + auth) — uploads under the user's GitHub account, copies the URL, opens it. image: screenshot the rendered artifact to <slug>.png via a headless Chrome-family browser (copies the PNG to the clipboard on macOS). pdf: print the rendered artifact to <slug>.pdf (copies the file reference to the clipboard on macOS). image/pdf render with the comments panel/section visible when comments exist.",
+          },
+        ),
       ),
       width: Type.Optional(
         Type.Integer({ description: 'share method=image only. Viewport width in px. Default: 1280.', minimum: 200 }),
@@ -112,6 +128,12 @@ export default function artifacts(pi: ExtensionAPI) {
       ),
       public: Type.Optional(
         Type.Boolean({ description: 'share method=gist only. Make the gist public. Default: false (secret gist).' }),
+      ),
+      annotations: Type.Optional(
+        Type.Boolean({
+          description:
+            'share only. When the artifact has annotation comments, bake them into the shared file (highlights + read-only comments panel) for the clipboard and gist methods. Default: true.',
+        }),
       ),
       title: Type.Optional(
         Type.String({
@@ -199,15 +221,16 @@ export default function artifacts(pi: ExtensionAPI) {
           return errResult(`no artifact with slug "${slug}" — create it first.`, { slug, title });
         }
         const method = params.method ?? 'clipboard';
+        const bake = params.annotations !== false;
         try {
           if (method === 'clipboard') {
-            const html = readArtifact(slug)!;
-            await copyToClipboard(html);
+            const res = await shareBaked(slug, title, 'copy', { bake });
+            const note = res.count ? ` — ${res.count} comment${res.count === 1 ? '' : 's'} baked in` : '';
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: `Copied ${title} to the clipboard (${Math.round(html.length / 1024)} KB of self-contained HTML).\n${absPath}`,
+                  text: `Copied ${title} to the clipboard (${Math.round((res.bytes ?? 0) / 1024)} KB of self-contained HTML)${note}.\n${absPath}`,
                 },
               ],
               details: { action, slug, title, method, absPath } as Record<string, unknown>,
@@ -220,33 +243,39 @@ export default function artifacts(pi: ExtensionAPI) {
               details: { action, slug, title, method, absPath } as Record<string, unknown>,
             };
           }
-          if (method === 'image') {
-            const url = await artifactUrl(slug); // starts the lazy server the browser will hit
-            const pngPath = join(artifactDir(), `${slug}.png`);
-            await screenshotUrl(url, pngPath, params.width ?? 1280, params.height ?? 800);
-            const copied = await copyImageToClipboard(pngPath);
+          if (method === 'image' || method === 'pdf') {
+            const baseUrl = new URL(await artifactUrl(slug)).origin; // starts the lazy server Chrome will hit
+            const res = await shareBaked(slug, title, method, {
+              baseUrl,
+              bake,
+              ...(params.width !== undefined ? { width: params.width } : {}),
+              ...(params.height !== undefined ? { height: params.height } : {}),
+            });
+            const noun = method === 'image' ? 'an image' : 'a PDF';
+            const note = res.count ? ` with ${res.count} comment${res.count === 1 ? '' : 's'} visible` : '';
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: `Rendered ${title} to an image (${params.width ?? 1280}×${params.height ?? 800}):\n${pngPath}${copied ? '\nCopied to the clipboard as an image — paste it anywhere.' : ''}`,
+                  text: `Rendered ${title} to ${noun}${note}:\n${res.path}${res.copied ? '\nCopied to the clipboard — paste it anywhere.' : ''}`,
                 },
               ],
-              details: { action, slug, title, method, absPath: pngPath, imageCopied: copied } as Record<
+              details: { action, slug, title, method, absPath: res.path, copied: res.copied } as Record<
                 string,
                 unknown
               >,
             };
           }
           // gist
-          const url = await createGist(absPath, title, params.public ?? false);
-          await copyToClipboard(url).catch(() => {}); // clipboard is a nicety, never the failure mode
+          const res = await shareBaked(slug, title, 'gist', { public: params.public ?? false, bake });
+          const url = res.url!;
+          const note = res.count ? ` — ${res.count} comment${res.count === 1 ? '' : 's'} baked in` : '';
           openInBrowser(url);
           return {
             content: [
               {
                 type: 'text' as const,
-                text: `Gist created (${params.public ? 'public' : 'secret'}), URL copied to clipboard:\n${url}\n\nNote: gist.github.com shows the source. Share the file itself for the rendered page.`,
+                text: `Gist created (${params.public ? 'public' : 'secret'})${note}, URL copied to clipboard:\n${url}\n\nNote: gist.github.com shows the source. Share the file itself for the rendered page.`,
               },
             ],
             details: { action, slug, title, method, url, absPath } as Record<string, unknown>,
@@ -273,6 +302,10 @@ export default function artifacts(pi: ExtensionAPI) {
         kind === 'html' ? renderHtmlDocument(title, slug, content) : renderMarkdownDocument(title, slug, content);
 
       writeArtifact(slug, html);
+
+      // Source mirror for annotation source-line refs (markdown artifacts only;
+      // additive — listArtifacts only reads .html).
+      if (kind === 'markdown') writeSourceMirror(slug, content);
 
       // Live-reload already-open tabs (no-op if server not running)
       notifyReload(slug);

@@ -52,6 +52,24 @@ export function writeArtifact(slug: string, html: string): string {
   return path;
 }
 
+/** Absolute path to a slug's annotations sidecar (<slug>.annotations.json). */
+export function annotationsPath(slug: string): string {
+  return join(artifactDir(), `${slug}.annotations.json`);
+}
+
+/** Absolute path to a slug's raw markdown source mirror (<slug>.md). */
+export function sourcePath(slug: string): string {
+  return join(artifactDir(), `${slug}.md`);
+}
+
+/** Write the raw markdown source mirror for a slug, creating the dir lazily. */
+export function writeSourceMirror(slug: string, content: string): string {
+  ensureArtifactDir();
+  const path = sourcePath(slug);
+  writeFileSync(path, content, 'utf-8');
+  return path;
+}
+
 /** Read an artifact file, or null if missing. */
 export function readArtifact(slug: string): string | null {
   const path = artifactPath(slug);
@@ -221,6 +239,32 @@ export async function screenshotUrl(url: string, outPath: string, width: number,
     url,
   ]);
   if (!existsSync(outPath)) throw new Error('the browser exited without writing a screenshot.');
+}
+
+/**
+ * Print a URL to PDF via headless Chrome-family flags.
+ * The artifact server must already be running (the caller ensures it).
+ */
+export async function pdfToFile(url: string, outPath: string): Promise<void> {
+  const browser = findBrowser();
+  if (!browser) {
+    throw new Error(
+      'no Chrome-family browser found (looked in /Applications). Install Chrome or Chromium to render PDFs.',
+    );
+  }
+  await run(browser, ['--headless', '--disable-gpu', '--no-pdf-header-footer', `--print-to-pdf=${outPath}`, url]);
+  if (!existsSync(outPath)) throw new Error('the browser exited without writing a PDF.');
+}
+
+/** Copy any file to the clipboard as a file reference (macOS only). Returns false elsewhere or on failure. */
+export async function copyFileToClipboard(absPath: string): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  try {
+    await run('osascript', ['-e', `set the clipboard to (POSIX file "${absPath}")`]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Copy a PNG file to the clipboard as an image (macOS only). Returns false on other platforms or failure. */
