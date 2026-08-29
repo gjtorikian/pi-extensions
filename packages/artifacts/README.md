@@ -13,7 +13,8 @@ pi install /Users/nicknisi/Developer/pi-extensions/packages/artifacts
 ## What it adds
 
 - **Tool `artifact`** — action-based (`create` | `update` | `open` | `list` | `share`). Registered with a `promptSnippet` ("emit visual output as a browser HTML artifact instead of terminal text") so the model knows when to reach for it.
-- **Command `/artifacts`** — starts the lazy server and opens the index page (`/`) in the browser.
+- **Command `/artifacts`** — in-TUI picker over every generated artifact (newest first, with relative age); Enter opens it in the browser and pins it as the footer status. Without a UI (print/RPC) or with no artifacts yet, falls back to opening the index page (`/`) in the browser.
+- **Footer status** — after `create`/`update`/`open`, the artifact's title appears in the footer as a persistent OSC 8 hyperlink to its localhost URL (`setStatus('artifacts', …)`), replacing the previous one. Rendered by pi's built-in footer or any custom footer that surfaces extension statuses (e.g. `@nicknisi/pi-statusline`).
 - **Event hook** — `session_shutdown`: stops the HTTP server.
 - **Browser UI** — styled artifact pages plus an index page at `/`; live reload via an `/events` SSE endpoint. Every served artifact page carries a **Share** button (bottom-right): _Copy image_ renders a PNG with the comments panel open (when comments exist), _Copy PDF_ prints to a selectable-text PDF with a Review comments section, _Copy file_ puts the self-contained HTML on your clipboard (comments baked in), _Create gist link_ uploads via `gh` and copies the URL — no agent round-trip needed. No TUI widgets, overlays, keybindings, or custom message/entry types: tool results use pi's default rendering (the tool returns structured `details` — `action`, `slug`, `title`, `kind`, `url`, `absPath` — and a text summary containing the clickable localhost URL).
 - **Annotation layer** — every served artifact page carries an inert comment layer (see [Annotations](#annotations)): select text, comment, and send the comments back to the running agent as a follow-up message.
@@ -130,7 +131,7 @@ Artifact: sprint-report (http://127.0.0.1:PORT/sprint-report.html)
 /artifacts
 ```
 
-User-facing front door: starts the lazy server if needed and opens the index page in the browser. No args, no subcommands — the index page is the listing and the picker.
+User-facing front door. With a UI, shows a select list of all generated artifacts (title, kind, relative age — newest first); picking one starts the lazy server if needed, opens it in the browser, and pins it as the footer status. Esc cancels. With no UI (print/RPC) or no artifacts yet, opens the browser index page instead. No args, no subcommands.
 
 ## Configuration
 
@@ -180,11 +181,12 @@ Peer deps: `@earendil-works/pi-coding-agent` (provides `ExtensionAPI` — only `
 
 ## Caveats
 
-- **Uses only the public extension API** (`registerTool` / `registerCommand` / `on("session_shutdown")`) — no pi internals. Should be stable across pi versions modulo API changes in those three calls.
+- **Uses only the public extension API** (`registerTool` / `registerCommand` / `on("session_shutdown")` / `ctx.ui.setStatus` / `ctx.ui.select`) — no pi internals. Should be stable across pi versions modulo API changes in those calls.
 - **Config is loaded once at extension load** (pi extensions load at session start) — edit `artifacts.json`, then restart pi.
 - **Mermaid artifacts need network** on first view (CDN script). Everything else is rendered at write time and viewable offline.
 - **Server lifetime = process lifetime.** Port is held in module state; the server stops on `session_shutdown`. Artifacts persist on disk and can be re-served by a later session.
 - **Server is per-process and cwd-keyed.** Two pi sessions in different projects each run their own server on different ports; artifact URLs from one session don't resolve in the other.
+- **Footer status uses a nerd-font glyph** (`\u{F0C5}`) — terminals without a nerd font show tofu for the icon; the link itself is unaffected.
 - **Browser open is platform-specific**: `open` (macOS), `rundll32 url.dll,FileProtocolHandler` (Windows — `start` is a cmd.exe builtin and can't be spawned), `xdg-open` (Linux). Failures only warn.
 - **`path` param is capped at 2 MB** — excerpt large files into `content` instead.
 - **Index-page metadata is regex-parsed** from each file's `<title>`/`<meta>` tags. Foreign `.html` files dropped into `.pi/artifacts/` are listed with kind inferred from the presence of the shell's `<style data-base>` marker.
